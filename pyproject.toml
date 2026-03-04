@@ -1,0 +1,27 @@
+[project]
+name = "race-engineer"
+version = "0.1.0"
+description = "AI race engineer voice assistant for Le Mans Ultimate"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.49.0",
+    "elevenlabs>=1.50.0",
+    "faster-whisper>=1.1.0",
+    "sounddevice>=0.5.0",
+    "numpy>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "pynput>=1.7.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["telemetry", "voice", "engineer"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
