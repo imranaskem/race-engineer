@@ -149,7 +149,7 @@ class _VehicleTelemetry(ctypes.Structure):
         ("mTurboBoostRPM",          c_double),
         ("mTurboBoostTemperature",  c_double),
         ("mTurboBoostVol",          c_double),
-        ("_expansion",              c_uint8 * 128),
+        ("_expansion",              c_uint8 * 104),
         ("mWheels",                 _Wheel * 4),       # FL, FR, RL, RR
     ]
 
