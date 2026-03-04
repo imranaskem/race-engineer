@@ -7,6 +7,7 @@ import pytest
 
 from telemetry.aggregator import TelemetryAggregator, _fmt_time
 from telemetry.provider import TelemetryState, TyreData
+from telemetry.rf2_shared_memory import _CornerTracker
 
 
 def make_state(**kwargs) -> TelemetryState:
@@ -157,6 +158,91 @@ class TestContextSummary:
         agg = TelemetryAggregator()
         ctx = agg.get_context()
         assert ctx == {"status": "no_data"}
+
+
+class TestCornerTracker:
+    def _drive_corner(self, tracker, entry_speed, apex_speed, exit_speed,
+                      entry_time=0.0, apex_time=2.0, exit_time=4.0):
+        """Simulate a single corner through the tracker."""
+        tracker.update(entry_speed, entry_time)   # above threshold (entry)
+        tracker.update(entry_speed - 10, entry_time + 0.1)  # cross threshold
+        tracker.update(apex_speed, apex_time)      # apex
+        tracker.update(apex_speed + 10, exit_time - 0.1)
+        tracker.update(exit_speed, exit_time)      # exit above threshold
+
+    def test_detects_single_corner(self):
+        t = _CornerTracker()
+        self._drive_corner(t, entry_speed=230, apex_speed=80, exit_speed=230)
+        corners = t.get_and_reset()
+        assert len(corners) == 1
+
+    def test_corner_name_increments(self):
+        t = _CornerTracker()
+        self._drive_corner(t, 230, 80, 230, entry_time=0, apex_time=2, exit_time=4)
+        self._drive_corner(t, 230, 90, 230, entry_time=10, apex_time=12, exit_time=14)
+        corners = t.get_and_reset()
+        assert corners[0].name == "Corner 1"
+        assert corners[1].name == "Corner 2"
+
+    def test_apex_speed_is_minimum(self):
+        t = _CornerTracker()
+        # Feed several speeds while in corner; apex should be the minimum
+        t.update(230, 0.0)   # above threshold
+        t.update(200, 0.1)   # cross into corner
+        t.update(120, 1.0)
+        t.update(85, 2.0)    # apex
+        t.update(95, 2.5)
+        t.update(230, 4.0)   # exit
+        corners = t.get_and_reset()
+        assert len(corners) == 1
+        assert corners[0].apex_speed_kmh == pytest.approx(85.0, abs=0.5)
+
+    def test_short_dip_ignored(self):
+        """A speed dip shorter than _CORNER_MIN_DURATION_S should not register."""
+        t = _CornerTracker()
+        t.update(230, 0.0)
+        t.update(200, 0.1)    # enter corner
+        t.update(180, 0.3)    # apex
+        t.update(230, 0.5)    # exit — only 0.4s, below 0.8s minimum
+        corners = t.get_and_reset()
+        assert len(corners) == 0
+
+    def test_get_and_reset_clears_state(self):
+        t = _CornerTracker()
+        self._drive_corner(t, 230, 80, 230)
+        t.get_and_reset()
+        # After reset, next corner should be "Corner 1" again
+        self._drive_corner(t, 230, 75, 230, entry_time=20, apex_time=22, exit_time=24)
+        corners = t.get_and_reset()
+        assert corners[0].name == "Corner 1"
+
+    def test_entry_and_exit_speeds_recorded(self):
+        t = _CornerTracker()
+        t.update(245, 0.0)   # high speed before corner
+        t.update(205, 0.1)   # cross threshold (entry recorded as prev speed ~245)
+        t.update(80, 2.0)
+        t.update(215, 4.0)   # exit
+        corners = t.get_and_reset()
+        assert len(corners) == 1
+        assert corners[0].entry_speed_kmh > 210    # was above threshold before entry
+        assert corners[0].exit_speed_kmh > 210     # exited above threshold
+
+    def test_no_corners_on_empty_lap(self):
+        t = _CornerTracker()
+        for speed in [250, 260, 255, 270, 265]:
+            t.update(speed, 0.0)
+        assert t.get_and_reset() == []
+
+    def test_very_slow_corner_still_detected(self):
+        """Hairpin with apex below 60 km/h should still be detected."""
+        t = _CornerTracker()
+        t.update(230, 0.0)
+        t.update(200, 0.1)
+        t.update(55, 2.0)
+        t.update(230, 5.0)
+        corners = t.get_and_reset()
+        assert len(corners) == 1
+        assert corners[0].apex_speed_kmh < 60
 
 
 class TestFormatTime:
