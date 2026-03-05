@@ -33,12 +33,8 @@ Three asyncio tasks run concurrently in `main.py`:
 - `provider.py` — `TelemetryState` dataclass (single source of truth for all game state) + abstract `TelemetryProvider`
 - `__init__.py` — auto-selects `RF2SharedMemoryProvider` on Windows, `MockTelemetryProvider` on Mac/Linux
 - `aggregator.py` — consumes `TelemetryState` snapshots, maintains rolling windows over the last N laps, computes derived metrics (`avg_fuel_per_lap`, `laps_of_fuel_remaining`, `avg_lap_time`, corner deltas), and returns edge-triggered `Alert` objects
-- `rf2_shared_memory.py` — ctypes structs mirroring the rF2 SDK MSVC layout (no `#pragma pack`); reads named Windows shared memory buffers `$rFactor2SMMP_Telemetry$` and `$rFactor2SMMP_Scoring$`
-
-**Validated struct sizes (Windows):** `_Wheel`=216, `_VehicleTelemetry`=1528, `_VehicleScoring`=376. Verify with:
-```bash
-python -c "import ctypes; from telemetry.rf2_shared_memory import _Wheel, _VehicleTelemetry, _VehicleScoring; print(ctypes.sizeof(_Wheel), ctypes.sizeof(_VehicleTelemetry), ctypes.sizeof(_VehicleScoring))"
-```
+- `rf2_shared_memory.py` — reads LMU's single `"LMU_Data"` shared memory file using `SimInfo` from `lmu_data.py`; no additional plugins required
+- `lmu_data.py` — vendored ctypes struct definitions from [pyLMUSharedMemory](https://github.com/TinyPedal/pyLMUSharedMemory) (TinyPedal team), derived from S397's official `SharedMemoryInterface` header; uses `_pack_ = 4`
 
 ### Engineer layer (`engineer/`)
 
