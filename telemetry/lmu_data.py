@@ -46,7 +46,7 @@ class LMUWheel(ctypes.Structure):
         ("mGripFract",                  ctypes.c_double),
         ("mPressure",                   ctypes.c_double),
         ("mTemperature",                ctypes.c_double * 3),   # Kelvin, left/center/right
-        ("mWear",                       ctypes.c_double),        # 0.0–1.0
+        ("mWear",                       ctypes.c_double),        # 1.0=new, 0.0=destroyed
         ("mTerrainName",                ctypes.c_char * 16),
         ("mSurfaceType",                ctypes.c_ubyte),
         ("mFlat",                       ctypes.c_bool),

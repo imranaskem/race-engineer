@@ -28,6 +28,10 @@ class TelemetryAggregator:
         # Per-lap rolling history
         self._lap_times: deque[float] = deque(maxlen=window_laps)
         self._fuel_per_lap: deque[float] = deque(maxlen=window_laps)
+        self._lap_top_speeds: deque[float] = deque(maxlen=window_laps)
+
+        # Current lap tracking
+        self._current_lap_top_speed: float = 0.0
 
         # State tracking for lap-boundary detection
         self._prev_laps_completed: int = -1
@@ -57,14 +61,22 @@ class TelemetryAggregator:
 
         new_alerts: list[Alert] = []
 
+        # --- Track top speed every tick ---
+        if state.speed_kmh > self._current_lap_top_speed:
+            self._current_lap_top_speed = state.speed_kmh
+
         # --- Lap boundary detection ---
         if state.laps_completed > self._prev_laps_completed:
             fuel_used = self._fuel_at_lap_start - state.fuel_l
-            if 0.5 < fuel_used < 8.0:   # sanity check: ignore refuelling laps (litres)
+            if 0.5 < fuel_used < 60.0:   # sanity check: positive, <60L covers 10x hypercar
                 self._fuel_per_lap.append(fuel_used)
 
             if state.lap_time_last > 0:
                 self._lap_times.append(state.lap_time_last)
+
+            if self._current_lap_top_speed > 0:
+                self._lap_top_speeds.append(self._current_lap_top_speed)
+            self._current_lap_top_speed = 0.0
 
             for corner in state.corners_last_lap:
                 if corner.name not in self._corner_history:
@@ -100,6 +112,13 @@ class TelemetryAggregator:
         if not self._lap_times:
             return 0.0
         return sum(self._lap_times) / len(self._lap_times)
+
+    @property
+    def top_speed_last_lap(self) -> float:
+        """Top speed (km/h) recorded during the most recently completed lap."""
+        if not self._lap_top_speeds:
+            return 0.0
+        return self._lap_top_speeds[-1]
 
     @property
     def last_vs_avg_delta(self) -> float:
@@ -177,6 +196,7 @@ class TelemetryAggregator:
             "best_lap": _fmt_time(s.lap_time_best),
             "rolling_avg_lap": _fmt_time(self.avg_lap_time),
             "last_vs_avg_delta_s": round(self.last_vs_avg_delta, 3),
+            "top_speed_last_lap_kmh": round(self.top_speed_last_lap, 1),
             # Gaps
             "gap_to_leader_s": round(s.gap_to_leader, 1),
             "gap_ahead_s": round(s.gap_to_car_ahead, 1),
@@ -185,8 +205,12 @@ class TelemetryAggregator:
             "fuel_l": round(s.fuel_l, 1),
             "laps_of_fuel_remaining": round(laps_fuel, 1),
             "avg_fuel_per_lap_l": round(self.avg_fuel_per_lap, 2),
-            # Hybrid / virtual energy (0–100%; 0 if no hybrid system)
-            "battery_charge_pct": round(s.battery_charge_fraction * 100, 1),
+            # Energy: GT3 uses virtual energy (BOP); hypercars use a real battery
+            **( {"virtual_energy_pct": round(s.battery_charge_fraction * 100, 1)}
+                if "GT3" in s.vehicle_class
+                else {"battery_charge_pct": round(s.battery_charge_fraction * 100, 1)}
+                if s.battery_charge_fraction > 0
+                else {} ),
             # Tyres
             "tyre_wear_pct": {
                 "fl": round(s.tyres.wear_fl * 100, 1),
@@ -218,6 +242,20 @@ class TelemetryAggregator:
             "active_alerts": list(self._active_alerts),
             # Corner-by-corner analysis vs rolling average
             "corner_analysis": self._corner_analysis(s.corners_last_lap),
+            # Other participants
+            "opponents": [
+                {
+                    "pos": o.position,
+                    "driver": o.driver_name,
+                    "car": o.vehicle_name,
+                    "class": o.vehicle_class,
+                    "gap_to_leader_s": o.gap_to_leader_s,
+                    "last_lap": _fmt_time(o.last_lap_s),
+                    "best_lap": _fmt_time(o.best_lap_s),
+                    "in_pit": o.in_pit,
+                }
+                for o in sorted(s.opponents, key=lambda o: o.position)
+            ],
         }
 
 

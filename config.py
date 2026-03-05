@@ -1,5 +1,6 @@
 import os
 import sys
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,21 +15,24 @@ CLAUDE_MODEL: str = "claude-opus-4-6"
 # Whisper STT — prefer CUDA on Windows, fall back to CPU if unavailable
 WHISPER_MODEL: str = "small.en"
 
+
 def _whisper_device() -> tuple[str, str]:
     if sys.platform == "win32":
         try:
             import ctypes
+
             ctypes.WinDLL("cublas64_12.dll")
             return "cuda", "float16"
         except OSError:
             return "cpu", "int8"
     return "cpu", "int8"
 
+
 WHISPER_DEVICE, WHISPER_COMPUTE_TYPE = _whisper_device()
 
 # ElevenLabs TTS
 # "Adam" — calm, authoritative, works well as a race engineer
-ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
+ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "onwK4e9ZLuTAKqWW03F9")
 ELEVENLABS_MODEL: str = "eleven_turbo_v2_5"  # lowest latency model
 # PCM 22050Hz 16-bit — play directly with sounddevice, no decoding needed
 ELEVENLABS_OUTPUT_FORMAT: str = "pcm_22050"

@@ -13,7 +13,7 @@ import math
 import random
 import time
 
-from .provider import CornerData, TelemetryProvider, TelemetryState, TyreData
+from .provider import CornerData, Opponent, TelemetryProvider, TelemetryState, TyreData
 
 # Approximate lap duration in seconds (1:45)
 _LAP_DURATION_BASE: float = 105.0
@@ -21,6 +21,20 @@ _LAP_DURATION_BASE: float = 105.0
 _FUEL_PER_LAP: float = 3.3
 # Tyre wear increment per lap (fraction of total life)
 _WEAR_PER_LAP: float = 0.018
+
+# Static opponent roster — (driver_name, vehicle_name, vehicle_class, base_gap_to_leader_s)
+_MOCK_OPPONENTS = [
+    ("Valentino Ferrari",  "Ferrari 296 GT3",  "GT3",  0.0),    # P1 overall
+    ("Klaus Brauer",       "Porsche 911 GT3R", "GT3",  4.8),    # P2
+    ("Yuki Nakamura",      "Aston Martin GT3", "GT3",  9.2),    # P3
+    ("Pierre Durand",      "BMW M4 GT3",       "GT3", 14.5),    # P4
+    ("Scott Anderson",     "McLaren 720S GT3", "GT3", 16.1),    # P5
+    # Player is P6 — gaps below are cars further behind
+    ("Marco Bianchi",      "Mercedes GT3",     "GT3", 24.3),    # P7
+    ("Liam O'Brien",       "Lamborghini GT3",  "GT3", 31.7),    # P8
+    ("Hans Gruber",        "Ferrari 296 GT3",  "GT3", 45.2),    # P9
+    ("Sébastien Moreau",   "Porsche 911 GT3R", "GT3", 52.8),    # P10
+]
 
 # Circuit corner definitions — loosely modelled on La Sarthe (Le Mans)
 # Each tuple: (name, entry_kmh, apex_kmh, exit_kmh, time_s)
@@ -69,6 +83,8 @@ class MockTelemetryProvider(TelemetryProvider):
         self._state.track_name = "Circuit de la Sarthe"
         self._state.session_type = "Race"
         self._state.vehicle_name = "BMW M4 GT3"
+        self._state.vehicle_class = "GT3"
+        self._state.battery_charge_fraction = 1.0   # GT3 virtual energy starts full
         self._state.track_temp_c = 32.0
         self._state.air_temp_c = 22.0
         self._state.session_time_remaining = 86400.0
@@ -156,10 +172,9 @@ class MockTelemetryProvider(TelemetryProvider):
         if not self._state.in_pit:
             self._state.fuel_l = max(0.0, self._state.fuel_l - fuel_drain_rate)
 
-        # --- Battery / virtual energy (simple oscillation for dev realism) ---
-        # Simulate deploy/regen cycle: charge drops on straights, recovers in braking zones
+        # GT3 virtual energy (BOP): depletes slowly on straights, minor regen in braking
         speed_norm = self._state.speed_kmh / 310.0
-        charge_delta = (0.3 - speed_norm) * 0.0002   # regen when braking, deploy on straight
+        charge_delta = (0.25 - speed_norm) * 0.0001
         self._state.battery_charge_fraction = max(0.0, min(1.0,
             self._state.battery_charge_fraction + charge_delta))
 
@@ -209,6 +224,24 @@ class MockTelemetryProvider(TelemetryProvider):
         s.position = max(1, 6 - int(elapsed_h * 0.3))
         s.position_in_class = max(1, 4 - int(elapsed_h * 0.2))
         s.gap_to_leader = max(0.0, s.position * 12.0 + random.gauss(0, 3))
+
+        # Update mock opponents — gaps drift slightly each lap
+        opponents = []
+        for rank, (driver, car, cls, base_gap) in enumerate(_MOCK_OPPONENTS):
+            pos = rank + 1 if rank < s.position - 1 else rank + 2
+            gap = max(0.0, base_gap + random.gauss(0, 1.5))
+            opponents.append(Opponent(
+                driver_name=driver,
+                vehicle_name=car,
+                vehicle_class=cls,
+                position=pos,
+                gap_to_leader_s=round(gap, 1),
+                last_lap_s=round(_LAP_DURATION_BASE + random.gauss(0, 0.8), 3),
+                best_lap_s=round(_LAP_DURATION_BASE - 0.5 + random.gauss(0, 0.3), 3),
+                laps_completed=s.laps_completed,
+                in_pit=random.random() < 0.03,
+            ))
+        s.opponents = opponents
 
     def _simulate_speed(self, phase: float) -> float:
         """

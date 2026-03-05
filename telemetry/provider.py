@@ -34,6 +34,20 @@ class TyreData:
 
 
 @dataclass
+class Opponent:
+    """Snapshot of another car on track."""
+    driver_name: str
+    vehicle_name: str
+    vehicle_class: str
+    position: int
+    gap_to_leader_s: float      # seconds behind leader (0.0 for leader)
+    last_lap_s: float
+    best_lap_s: float
+    laps_completed: int
+    in_pit: bool
+
+
+@dataclass
 class TelemetryState:
     """
     Unified telemetry snapshot. Populated from rF2 shared memory on Windows,
@@ -93,9 +107,13 @@ class TelemetryState:
     track_name: str = ""
     session_type: str = ""          # e.g. "Race", "Qualifying", "Practice"
     vehicle_name: str = ""
+    vehicle_class: str = ""         # e.g. "GT3", "LMH", "LMDh"
 
     # --- Corner analysis (populated on lap completion) ---
     corners_last_lap: list = field(default_factory=list)  # list[CornerData]
+
+    # --- Other participants ---
+    opponents: list = field(default_factory=list)  # list[Opponent]
 
 
 class TelemetryProvider(ABC):

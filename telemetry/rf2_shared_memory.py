@@ -12,7 +12,7 @@ import asyncio
 import math
 
 from .lmu_data import LMUConstants, SimInfo
-from .provider import CornerData, TelemetryProvider, TelemetryState, TyreData
+from .provider import CornerData, Opponent, TelemetryProvider, TelemetryState, TyreData
 
 # LMU game phase values (InternalsPlugin.hpp)
 _PHASE_FCY          = 6   # Full course yellow / safety car
@@ -174,6 +174,7 @@ class RF2SharedMemoryProvider(TelemetryProvider):
         self._apply_telemetry(v, self._state)
         if player_s is not None:
             self._apply_scoring(info, player_s, self._state)
+        self._apply_opponents(info, scor, self._state)
 
     # ------------------------------------------------------------------
     # Telemetry
@@ -203,7 +204,8 @@ class RF2SharedMemoryProvider(TelemetryProvider):
             return float(w.mTireCarcassTemperature) - 273.15
 
         def _wear(w) -> float:
-            return max(0.0, min(1.0, float(w.mWear)))
+            # mWear: 1.0 = new, 0.0 = destroyed — invert to match our 0→1 convention
+            return max(0.0, min(1.0, 1.0 - float(w.mWear)))
 
         s.tyres = TyreData(
             temp_fl=round(_temp_c(wh[0]), 1),
@@ -245,6 +247,7 @@ class RF2SharedMemoryProvider(TelemetryProvider):
 
         s.track_name    = info.mTrackName.decode("utf-8", errors="replace").rstrip("\x00")
         s.vehicle_name  = v.mVehicleName.decode("utf-8", errors="replace").rstrip("\x00")
+        s.vehicle_class = v.mVehicleClass.decode("utf-8", errors="replace").rstrip("\x00")
         session_int     = int(info.mSession)
         s.session_type  = _SESSION_TYPE_MAP.get(session_int, f"Session {session_int}")
 
@@ -274,3 +277,23 @@ class RF2SharedMemoryProvider(TelemetryProvider):
         s.sector3_last   = max(0.0, s.lap_time_last - s.sector1_last - s.sector2_last)
 
         s.in_pit = bool(v.mInPits)
+
+    def _apply_opponents(self, info, scor, s: TelemetryState) -> None:
+        opponents = []
+        n = min(int(info.mNumVehicles), LMUConstants.MAX_MAPPED_VEHICLES)
+        for i in range(n):
+            sv = scor.vehScoringInfo[i]
+            if sv.mIsPlayer:
+                continue
+            opponents.append(Opponent(
+                driver_name=sv.mDriverName.decode("utf-8", errors="replace").rstrip("\x00"),
+                vehicle_name=sv.mVehicleName.decode("utf-8", errors="replace").rstrip("\x00"),
+                vehicle_class=sv.mVehicleClass.decode("utf-8", errors="replace").rstrip("\x00"),
+                position=int(sv.mPlace),
+                gap_to_leader_s=max(0.0, float(sv.mTimeBehindLeader)),
+                last_lap_s=max(0.0, float(sv.mLastLapTime)),
+                best_lap_s=max(0.0, float(sv.mBestLapTime)),
+                laps_completed=max(0, int(sv.mTotalLaps)),
+                in_pit=bool(sv.mInPits),
+            ))
+        s.opponents = opponents
