@@ -203,12 +203,11 @@ class TelemetryAggregator:
             "gap_behind_s": round(s.gap_to_car_behind, 1),
             # Fuel
             "fuel_l": round(s.fuel_l, 1),
+            "fuel_capacity_l": round(s.fuel_capacity_l, 1),
             "laps_of_fuel_remaining": round(laps_fuel, 1),
             "avg_fuel_per_lap_l": round(self.avg_fuel_per_lap, 2),
-            # Energy: GT3 uses virtual energy (BOP); hypercars use a real battery
-            **( {"virtual_energy_pct": round(s.battery_charge_fraction * 100, 1)}
-                if "GT3" in s.vehicle_class
-                else {"battery_charge_pct": round(s.battery_charge_fraction * 100, 1)}
+            # Battery (hypercars only — GT3 virtual energy is not exposed in shared memory)
+            **( {"battery_charge_pct": round(s.battery_charge_fraction * 100, 1)}
                 if s.battery_charge_fraction > 0
                 else {} ),
             # Tyres

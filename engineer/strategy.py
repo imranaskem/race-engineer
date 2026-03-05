@@ -48,6 +48,8 @@ def compute_strategy(context: dict) -> StrategySnapshot:
     fuel_laps = float(context.get("laps_of_fuel_remaining", 0))
     lap_number = int(context.get("lap_number", 1))
     avg_fuel_l = float(context.get("avg_fuel_per_lap_l", 3.3))
+    current_fuel_l = float(context.get("fuel_l", 0.0))
+    tank_capacity_l = float(context.get("fuel_capacity_l", 110.0))
     tyre_wear = context.get("tyre_wear_pct", {})
     session_h = float(context.get("session_time_remaining_h", 24.0))
     avg_lap_s_str = context.get("rolling_avg_lap", "0:00.000")
@@ -91,13 +93,13 @@ def compute_strategy(context: dict) -> StrategySnapshot:
     laps_to_deadline = min(fuel_laps, tyre_laps_remaining)
     recommended_pit_lap = lap_number + max(0, int(laps_to_deadline) - 2)
 
-    # Next stint length: how long can we go before next fuel stop
-    # Assume we fill to full tank (~110 L for GT3), minus safety margin
-    tank_capacity_l = 110.0
+    # Next stint length: how long can we go on a full tank, minus safety margin
     safety_reserve_laps = 3
     next_stint_laps = int((tank_capacity_l / avg_fuel_l) - safety_reserve_laps)
     next_stint_laps = min(next_stint_laps, int(session_laps_remaining))
-    fuel_to_add_l = min(tank_capacity_l, next_stint_laps * avg_fuel_l * 1.05)  # 5% buffer
+    # Fuel to ADD at the stop = target level minus what's already in the tank
+    target_fuel_l = min(tank_capacity_l, next_stint_laps * avg_fuel_l * 1.05)  # 5% buffer
+    fuel_to_add_l = max(0.0, target_fuel_l - current_fuel_l)
 
     # Pit time loss estimate (in-lap, stationary, out-lap premium)
     # A typical LMU pit stop: ~25s stationary + 30s in-lap loss + 15s out-lap = ~70s

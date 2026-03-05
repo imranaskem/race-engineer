@@ -84,7 +84,6 @@ class MockTelemetryProvider(TelemetryProvider):
         self._state.session_type = "Race"
         self._state.vehicle_name = "BMW M4 GT3"
         self._state.vehicle_class = "GT3"
-        self._state.battery_charge_fraction = 1.0   # GT3 virtual energy starts full
         self._state.track_temp_c = 32.0
         self._state.air_temp_c = 22.0
         self._state.session_time_remaining = 86400.0
@@ -171,12 +170,6 @@ class MockTelemetryProvider(TelemetryProvider):
         fuel_drain_rate = (_FUEL_PER_LAP / self._current_lap_duration) * 0.02
         if not self._state.in_pit:
             self._state.fuel_l = max(0.0, self._state.fuel_l - fuel_drain_rate)
-
-        # GT3 virtual energy (BOP): depletes slowly on straights, minor regen in braking
-        speed_norm = self._state.speed_kmh / 310.0
-        charge_delta = (0.25 - speed_norm) * 0.0001
-        self._state.battery_charge_fraction = max(0.0, min(1.0,
-            self._state.battery_charge_fraction + charge_delta))
 
         # --- Gaps (jitter around a mean) ---
         self._state.gap_to_car_ahead = max(0.0, self._state.gap_to_car_ahead + random.gauss(0, 0.05))

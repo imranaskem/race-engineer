@@ -161,85 +161,96 @@ class TestContextSummary:
 
 
 class TestCornerTracker:
-    def _drive_corner(self, tracker, entry_speed, apex_speed, exit_speed,
-                      entry_time=0.0, apex_time=2.0, exit_time=4.0):
-        """Simulate a single corner through the tracker."""
-        tracker.update(entry_speed, entry_time)   # above threshold (entry)
-        tracker.update(entry_speed - 10, entry_time + 0.1)  # cross threshold
-        tracker.update(apex_speed, apex_time)      # apex
-        tracker.update(apex_speed + 10, exit_time - 0.1)
-        tracker.update(exit_speed, exit_time)      # exit above threshold
+    def _drive_corner(self, tracker, entry_speed=250.0, apex_speed=80.0, exit_speed=250.0,
+                      entry_time=0.0, apex_time=2.0, exit_time=4.0, peak_lat_g=1.5):
+        """Simulate a single corner: straight → lateral load → apex → exit."""
+        tracker.update(entry_speed, 0.0, entry_time)               # straight, no lateral load
+        tracker.update(entry_speed - 30, peak_lat_g, entry_time + 0.1)  # lateral load builds
+        tracker.update(apex_speed, peak_lat_g, apex_time)          # apex, peak load
+        tracker.update(apex_speed + 40, peak_lat_g * 0.3, exit_time - 0.3)  # unwinding
+        tracker.update(exit_speed, 0.0, exit_time)                 # exit, load gone
 
     def test_detects_single_corner(self):
         t = _CornerTracker()
-        self._drive_corner(t, entry_speed=230, apex_speed=80, exit_speed=230)
+        self._drive_corner(t)
         corners = t.get_and_reset()
         assert len(corners) == 1
 
     def test_corner_name_increments(self):
         t = _CornerTracker()
-        self._drive_corner(t, 230, 80, 230, entry_time=0, apex_time=2, exit_time=4)
-        self._drive_corner(t, 230, 90, 230, entry_time=10, apex_time=12, exit_time=14)
+        self._drive_corner(t, entry_time=0, apex_time=2, exit_time=4)
+        self._drive_corner(t, entry_time=10, apex_time=12, exit_time=14)
         corners = t.get_and_reset()
         assert corners[0].name == "Corner 1"
         assert corners[1].name == "Corner 2"
 
     def test_apex_speed_is_minimum(self):
         t = _CornerTracker()
-        # Feed several speeds while in corner; apex should be the minimum
-        t.update(230, 0.0)   # above threshold
-        t.update(200, 0.1)   # cross into corner
-        t.update(120, 1.0)
-        t.update(85, 2.0)    # apex
-        t.update(95, 2.5)
-        t.update(230, 4.0)   # exit
+        t.update(250, 0.0, 0.0)    # straight
+        t.update(200, 1.5, 0.1)    # enter corner
+        t.update(120, 1.5, 1.0)
+        t.update(85,  1.5, 2.0)    # apex — minimum speed
+        t.update(95,  1.5, 2.5)
+        t.update(200, 0.1, 4.0)    # exit
         corners = t.get_and_reset()
         assert len(corners) == 1
         assert corners[0].apex_speed_kmh == pytest.approx(85.0, abs=0.5)
 
-    def test_short_dip_ignored(self):
-        """A speed dip shorter than _CORNER_MIN_DURATION_S should not register."""
+    def test_brief_lateral_load_ignored(self):
+        """Lateral load shorter than _CORNER_MIN_DURATION_S should not register."""
         t = _CornerTracker()
-        t.update(230, 0.0)
-        t.update(200, 0.1)    # enter corner
-        t.update(180, 0.3)    # apex
-        t.update(230, 0.5)    # exit — only 0.4s, below 0.8s minimum
+        t.update(250, 0.0, 0.0)    # straight
+        t.update(200, 1.5, 0.1)    # enter corner
+        t.update(180, 1.5, 0.3)    # apex
+        t.update(200, 0.1, 0.5)    # exit — only 0.4s, below 0.8s minimum
         corners = t.get_and_reset()
         assert len(corners) == 0
 
     def test_get_and_reset_clears_state(self):
         t = _CornerTracker()
-        self._drive_corner(t, 230, 80, 230)
+        self._drive_corner(t)
         t.get_and_reset()
         # After reset, next corner should be "Corner 1" again
-        self._drive_corner(t, 230, 75, 230, entry_time=20, apex_time=22, exit_time=24)
+        self._drive_corner(t, entry_time=20, apex_time=22, exit_time=24)
         corners = t.get_and_reset()
         assert corners[0].name == "Corner 1"
 
     def test_entry_and_exit_speeds_recorded(self):
         t = _CornerTracker()
-        t.update(245, 0.0)   # high speed before corner
-        t.update(205, 0.1)   # cross threshold (entry recorded as prev speed ~245)
-        t.update(80, 2.0)
-        t.update(215, 4.0)   # exit
+        t.update(280, 0.0, 0.0)    # high-speed straight
+        t.update(220, 0.8, 0.1)    # enter corner at 220 km/h
+        t.update(80,  1.5, 2.0)    # apex
+        t.update(260, 0.1, 4.0)    # exit at 260 km/h
         corners = t.get_and_reset()
         assert len(corners) == 1
-        assert corners[0].entry_speed_kmh > 210    # was above threshold before entry
-        assert corners[0].exit_speed_kmh > 210     # exited above threshold
+        assert corners[0].entry_speed_kmh == pytest.approx(220, abs=1)
+        assert corners[0].exit_speed_kmh == pytest.approx(260, abs=1)
 
-    def test_no_corners_on_empty_lap(self):
+    def test_no_corners_on_straight(self):
+        """High-speed straight with no lateral load should produce no corners."""
         t = _CornerTracker()
-        for speed in [250, 260, 255, 270, 265]:
-            t.update(speed, 0.0)
+        for i, speed in enumerate([280, 290, 300, 310, 320]):
+            t.update(speed, 0.05, float(i))
         assert t.get_and_reset() == []
+
+    def test_high_speed_corner_detected(self):
+        """High-speed corners like Monza's Lesmos (no sharp speed reduction) are detected."""
+        t = _CornerTracker()
+        t.update(240, 0.0, 0.0)    # entry speed
+        t.update(215, 0.9, 0.1)    # lateral load builds — still fast
+        t.update(200, 0.9, 1.5)    # apex — speed barely drops
+        t.update(220, 0.1, 3.0)    # exit
+        corners = t.get_and_reset()
+        assert len(corners) == 1
+        assert corners[0].apex_speed_kmh >= 200    # high-speed corner, apex still fast
 
     def test_very_slow_corner_still_detected(self):
         """Hairpin with apex below 60 km/h should still be detected."""
         t = _CornerTracker()
-        t.update(230, 0.0)
-        t.update(200, 0.1)
-        t.update(55, 2.0)
-        t.update(230, 5.0)
+        t.update(230, 0.0, 0.0)
+        t.update(150, 2.0, 0.1)
+        t.update(55,  2.5, 2.0)
+        t.update(180, 0.1, 5.0)
         corners = t.get_and_reset()
         assert len(corners) == 1
         assert corners[0].apex_speed_kmh < 60

@@ -30,14 +30,14 @@ _SESSION_TYPE_MAP: dict[int, str] = {
     4: "Race",
 }
 
-# Corner detection thresholds
-_CORNER_ENTRY_SPEED_KMH = 210.0
-_CORNER_MIN_APEX_SPEED  = 40.0
-_CORNER_MIN_DURATION_S  = 0.8
+# Corner detection thresholds (lateral-acceleration based)
+_CORNER_ENTRY_ACCEL_G = 0.4   # |lateral g| to enter a corner
+_CORNER_EXIT_ACCEL_G  = 0.2   # |lateral g| hysteresis to confirm exit
+_CORNER_MIN_DURATION_S = 0.8  # minimum seconds to count as a real corner
 
 
 # ===========================================================================
-# Corner tracker — unchanged from original, detects corners from speed minima
+# Corner tracker — detects corners from lateral acceleration
 # ===========================================================================
 
 class _CornerTracker:
@@ -46,27 +46,24 @@ class _CornerTracker:
         self._corner_entry_speed: float = 0.0
         self._corner_entry_time: float = 0.0
         self._apex_speed: float = 999.0
-        self._apex_time: float = 0.0
-        self._prev_speed: float = 999.0
         self._corner_index: int = 0
         self._completed: list[CornerData] = []
 
-    def update(self, speed_kmh: float, time_in_lap: float) -> None:
+    def update(self, speed_kmh: float, lat_accel_g: float, time_in_lap: float) -> None:
+        lat = abs(lat_accel_g)
         if not self._in_corner:
-            if speed_kmh < _CORNER_ENTRY_SPEED_KMH and self._prev_speed >= _CORNER_ENTRY_SPEED_KMH:
+            if lat >= _CORNER_ENTRY_ACCEL_G:
                 self._in_corner = True
-                self._corner_entry_speed = self._prev_speed
+                self._corner_entry_speed = speed_kmh
                 self._corner_entry_time = time_in_lap
                 self._apex_speed = speed_kmh
-                self._apex_time = time_in_lap
         else:
             if speed_kmh < self._apex_speed:
                 self._apex_speed = speed_kmh
-                self._apex_time = time_in_lap
 
-            if speed_kmh >= _CORNER_ENTRY_SPEED_KMH:
+            if lat < _CORNER_EXIT_ACCEL_G:
                 duration = time_in_lap - self._corner_entry_time
-                if duration >= _CORNER_MIN_DURATION_S and self._apex_speed >= _CORNER_MIN_APEX_SPEED:
+                if duration >= _CORNER_MIN_DURATION_S:
                     self._corner_index += 1
                     self._completed.append(CornerData(
                         name=f"Corner {self._corner_index}",
@@ -76,8 +73,6 @@ class _CornerTracker:
                         time_s=round(duration, 3),
                     ))
                 self._in_corner = False
-
-        self._prev_speed = speed_kmh
 
     def get_and_reset(self) -> list[CornerData]:
         result = self._completed
@@ -185,13 +180,18 @@ class RF2SharedMemoryProvider(TelemetryProvider):
         vx, vy, vz = v.mLocalVel.x, v.mLocalVel.y, v.mLocalVel.z
         s.speed_kmh = math.sqrt(vx*vx + vy*vy + vz*vz) * 3.6
 
+        # Lateral acceleration: mLocalAccel.x is lateral in rF2/LMU local frame (m/s² → g)
+        s.lateral_accel_g = abs(v.mLocalAccel.x) / 9.81
+
         s.throttle = max(0.0, min(1.0, float(v.mUnfilteredThrottle)))
         s.brake    = max(0.0, min(1.0, float(v.mUnfilteredBrake)))
         s.gear     = int(v.mGear)
         s.rpm      = float(v.mEngineRPM)
 
-        # Fuel: mFuel is in litres
+        # Fuel: mFuel and mFuelCapacity are in litres
         s.fuel_l = float(v.mFuel)
+        if v.mFuelCapacity > 0:
+            s.fuel_capacity_l = float(v.mFuelCapacity)
 
         # Battery / virtual energy
         s.battery_charge_fraction = max(0.0, min(1.0, float(v.mBatteryChargeFraction)))
@@ -235,7 +235,7 @@ class RF2SharedMemoryProvider(TelemetryProvider):
 
         self._prev_lap_number = current_lap
         s.lap_number = current_lap
-        self._corner_tracker.update(s.speed_kmh, s.lap_time_current)
+        self._corner_tracker.update(s.speed_kmh, s.lateral_accel_g, s.lap_time_current)
 
     # ------------------------------------------------------------------
     # Scoring

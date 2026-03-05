@@ -60,7 +60,9 @@ class TelemetryState:
     gear: int = 0               # -1 = reverse, 0 = neutral, 1–n = gear
     rpm: float = 0.0
     fuel_l: float = 100.0
+    fuel_capacity_l: float = 110.0         # max tank size in litres
     battery_charge_fraction: float = 0.0   # 0.0–1.0; 0 if no hybrid system
+    lateral_accel_g: float = 0.0           # absolute lateral acceleration in g
 
     tyres: TyreData = field(default_factory=TyreData)
 
