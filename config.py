@@ -11,10 +11,20 @@ ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
 # Claude — Opus for best reasoning quality in race-critical decisions
 CLAUDE_MODEL: str = "claude-opus-4-6"
 
-# Whisper STT — use CUDA on Windows, CPU on Mac
+# Whisper STT — prefer CUDA on Windows, fall back to CPU if unavailable
 WHISPER_MODEL: str = "small.en"
-WHISPER_DEVICE: str = "cuda" if sys.platform == "win32" else "cpu"
-WHISPER_COMPUTE_TYPE: str = "float16" if sys.platform == "win32" else "int8"
+
+def _whisper_device() -> tuple[str, str]:
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.WinDLL("cublas64_12.dll")
+            return "cuda", "float16"
+        except OSError:
+            return "cpu", "int8"
+    return "cpu", "int8"
+
+WHISPER_DEVICE, WHISPER_COMPUTE_TYPE = _whisper_device()
 
 # ElevenLabs TTS
 # "Adam" — calm, authoritative, works well as a race engineer
