@@ -40,16 +40,24 @@ class WhisperSTT:
         )
         log.info("Whisper model loaded.")
 
-    def start_keyboard_listener(self, on_transcript: Callable[[str], None]) -> None:
+    def start_keyboard_listener(
+        self,
+        on_transcript: Callable[[str], None],
+        on_quit: Callable[[], None] | None = None,
+    ) -> None:
         """
         Start a background keyboard listener for push-to-talk.
         Calls on_transcript(text) when a recording is transcribed.
+        Calls on_quit() when ESC is pressed (if provided).
         Uses asyncio.get_event_loop() so the callback posts back to the event loop.
         """
         loop = asyncio.get_event_loop()
 
         def _on_press(key: keyboard.Key | keyboard.KeyCode) -> None:
             try:
+                if key == keyboard.Key.esc and on_quit is not None:
+                    loop.call_soon_threadsafe(on_quit)
+                    return
                 if str(key) == f"Key.{config.PTT_KEY}" or (
                     hasattr(key, "char") and key.char == config.PTT_KEY
                 ):
@@ -78,7 +86,7 @@ class WhisperSTT:
 
         self._listener = keyboard.Listener(on_press=_on_press, on_release=_on_release)
         self._listener.start()
-        log.info("PTT listener started — hold SPACE to talk.")
+        log.info("PTT listener started — hold SPACE to talk. Press ESC to quit.")
 
     def stop_keyboard_listener(self) -> None:
         if self._listener:

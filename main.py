@@ -114,21 +114,36 @@ async def main() -> None:
         query_queue.put_nowait(text)
 
     audio_stream = stt.start_stream()
-    stt.start_keyboard_listener(on_transcript)
 
     print()
     print("=" * 50)
     print("  LMU AI Race Engineer — READY")
     print(f"  Hold [{config.PTT_KEY.upper()}] to talk to your engineer.")
-    print("  Ctrl+C to quit.")
+    print("  Press [ESC] to quit.")
     print("=" * 50)
     print()
 
+    stop_event = asyncio.Event()
+
+    def _on_quit() -> None:
+        log.info("ESC pressed — shutting down.")
+        stop_event.set()
+
+    stt.start_keyboard_listener(on_transcript, on_quit=_on_quit)
+
+    async def _wait_for_stop() -> None:
+        await stop_event.wait()
+
     try:
-        await asyncio.gather(
-            telemetry_loop(provider, aggregator, alert_queue),
-            engineer_loop(agent, aggregator, query_queue, alert_queue, tts),
-        )
+        tasks = [
+            asyncio.create_task(telemetry_loop(provider, aggregator, alert_queue)),
+            asyncio.create_task(engineer_loop(agent, aggregator, query_queue, alert_queue, tts)),
+            asyncio.create_task(_wait_for_stop()),
+        ]
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
     except KeyboardInterrupt:
         log.info("Shutting down.")
     finally:
