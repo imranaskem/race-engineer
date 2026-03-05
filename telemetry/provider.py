@@ -45,7 +45,8 @@ class TelemetryState:
     brake: float = 0.0          # 0.0–1.0
     gear: int = 0               # -1 = reverse, 0 = neutral, 1–n = gear
     rpm: float = 0.0
-    fuel_kg: float = 100.0
+    fuel_l: float = 100.0
+    battery_charge_fraction: float = 0.0   # 0.0–1.0; 0 if no hybrid system
 
     tyres: TyreData = field(default_factory=TyreData)
 
@@ -89,6 +90,9 @@ class TelemetryState:
     # --- Session ---
     session_time_remaining: float = 86400.0  # seconds
     race_elapsed_time: float = 0.0
+    track_name: str = ""
+    session_type: str = ""          # e.g. "Race", "Qualifying", "Practice"
+    vehicle_name: str = ""
 
     # --- Corner analysis (populated on lap completion) ---
     corners_last_lap: list = field(default_factory=list)  # list[CornerData]

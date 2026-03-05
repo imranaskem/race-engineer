@@ -9,6 +9,7 @@ Responsibilities:
   - Alert detection (LOW_FUEL, FCY, SAFETY_CAR, TYRE_CRITICAL)
 """
 from collections import deque
+from statistics import median
 from typing import NamedTuple
 
 from .provider import CornerData, TelemetryState
@@ -30,7 +31,7 @@ class TelemetryAggregator:
 
         # State tracking for lap-boundary detection
         self._prev_laps_completed: int = -1
-        self._fuel_at_lap_start: float = 0.0
+        self._fuel_at_lap_start: float = 0.0   # litres
 
         # Alert state
         self._active_alerts: set[str] = set()
@@ -50,7 +51,7 @@ class TelemetryAggregator:
         if self._prev_laps_completed == -1:
             # First update — initialise tracking state
             self._prev_laps_completed = state.laps_completed
-            self._fuel_at_lap_start = state.fuel_kg
+            self._fuel_at_lap_start = state.fuel_l
             self._state = state
             return []
 
@@ -58,8 +59,8 @@ class TelemetryAggregator:
 
         # --- Lap boundary detection ---
         if state.laps_completed > self._prev_laps_completed:
-            fuel_used = self._fuel_at_lap_start - state.fuel_kg
-            if 0.5 < fuel_used < 6.0:   # sanity check: ignore refuelling laps
+            fuel_used = self._fuel_at_lap_start - state.fuel_l
+            if 0.5 < fuel_used < 8.0:   # sanity check: ignore refuelling laps (litres)
                 self._fuel_per_lap.append(fuel_used)
 
             if state.lap_time_last > 0:
@@ -71,7 +72,7 @@ class TelemetryAggregator:
                 self._corner_history[corner.name].append((corner.time_s, corner.apex_speed_kmh))
 
             self._prev_laps_completed = state.laps_completed
-            self._fuel_at_lap_start = state.fuel_kg
+            self._fuel_at_lap_start = state.fuel_l
 
         self._state = state
         new_alerts = self._detect_alerts()
@@ -83,16 +84,16 @@ class TelemetryAggregator:
 
     @property
     def avg_fuel_per_lap(self) -> float:
-        """Average kg consumed per lap over the rolling window."""
+        """Average litres consumed per lap over the rolling window."""
         if not self._fuel_per_lap:
-            return 2.5  # fallback estimate for GT3
+            return 3.3  # fallback estimate for GT3 (~3.3 L/lap)
         return sum(self._fuel_per_lap) / len(self._fuel_per_lap)
 
     @property
     def laps_of_fuel_remaining(self) -> float:
         if self._state is None or self.avg_fuel_per_lap <= 0:
             return 0.0
-        return self._state.fuel_kg / self.avg_fuel_per_lap
+        return self._state.fuel_l / self.avg_fuel_per_lap
 
     @property
     def avg_lap_time(self) -> float:
@@ -120,7 +121,7 @@ class TelemetryAggregator:
         current: set[str] = set()
         alerts: list[Alert] = []
 
-        if self.laps_of_fuel_remaining < 5 and s.fuel_kg > 0:
+        if self.laps_of_fuel_remaining < 5 and s.fuel_l > 0:
             current.add("LOW_FUEL")
 
         if s.fcy_active:
@@ -160,6 +161,10 @@ class TelemetryAggregator:
         session_h = s.session_time_remaining / 3600
 
         return {
+            # Session identity
+            "track_name": s.track_name,
+            "session_type": s.session_type,
+            "vehicle_name": s.vehicle_name,
             # Race standing
             "position": s.position,
             "position_in_class": s.position_in_class,
@@ -177,9 +182,11 @@ class TelemetryAggregator:
             "gap_ahead_s": round(s.gap_to_car_ahead, 1),
             "gap_behind_s": round(s.gap_to_car_behind, 1),
             # Fuel
-            "fuel_kg": round(s.fuel_kg, 1),
+            "fuel_l": round(s.fuel_l, 1),
             "laps_of_fuel_remaining": round(laps_fuel, 1),
-            "avg_fuel_per_lap_kg": round(self.avg_fuel_per_lap, 2),
+            "avg_fuel_per_lap_l": round(self.avg_fuel_per_lap, 2),
+            # Hybrid / virtual energy (0–100%; 0 if no hybrid system)
+            "battery_charge_pct": round(s.battery_charge_fraction * 100, 1),
             # Tyres
             "tyre_wear_pct": {
                 "fl": round(s.tyres.wear_fl * 100, 1),
@@ -226,7 +233,8 @@ class TelemetryAggregator:
             if not history or len(history) < 2:
                 continue
             avg_time = sum(t for t, _ in history) / len(history)
-            avg_apex = sum(a for _, a in history) / len(history)
+            # Median for apex speed: robust against single outbraking/off-line laps
+            avg_apex = median(a for _, a in history)
             delta = corner.time_s - avg_time  # positive = slower than average
             results.append({
                 "corner": corner.name,

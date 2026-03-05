@@ -14,15 +14,21 @@ import math
 from .lmu_data import LMUConstants, SimInfo
 from .provider import CornerData, TelemetryProvider, TelemetryState, TyreData
 
-# Fuel density for petrol — GT3/GTE/Hypercar ~0.750 kg/l
-_FUEL_DENSITY = 0.750
-
 # LMU game phase values (InternalsPlugin.hpp)
 _PHASE_FCY          = 6   # Full course yellow / safety car
 _PHASE_SESSION_STOP = 7   # Session stopped
 
 # Yellow flag state: 2 = pits closed (SC/FCY deployed)
 _YELLOW_PIT_CLOSED  = 2
+
+# rF2/LMU session type mapping (from InternalsPlugin.hpp)
+_SESSION_TYPE_MAP: dict[int, str] = {
+    0: "Test Day",
+    1: "Practice",
+    2: "Qualifying",
+    3: "Warm Up",
+    4: "Race",
+}
 
 # Corner detection thresholds
 _CORNER_ENTRY_SPEED_KMH = 210.0
@@ -183,14 +189,18 @@ class RF2SharedMemoryProvider(TelemetryProvider):
         s.gear     = int(v.mGear)
         s.rpm      = float(v.mEngineRPM)
 
-        # Fuel: mFuel is in litres → convert to kg
-        s.fuel_kg  = float(v.mFuel) * _FUEL_DENSITY
+        # Fuel: mFuel is in litres
+        s.fuel_l = float(v.mFuel)
+
+        # Battery / virtual energy
+        s.battery_charge_fraction = max(0.0, min(1.0, float(v.mBatteryChargeFraction)))
 
         # Tyres — FL=0, FR=1, RL=2, RR=3
         wh = v.mWheels
 
         def _temp_c(w) -> float:
-            return sum(w.mTemperature) / 3.0 - 273.15  # Kelvin → Celsius
+            # mTireCarcassTemperature matches the in-game HUD display (Kelvin → Celsius)
+            return float(w.mTireCarcassTemperature) - 273.15
 
         def _wear(w) -> float:
             return max(0.0, min(1.0, float(w.mWear)))
@@ -232,6 +242,11 @@ class RF2SharedMemoryProvider(TelemetryProvider):
     def _apply_scoring(self, info, v, s: TelemetryState) -> None:
         s.race_elapsed_time      = float(info.mCurrentET)
         s.session_time_remaining = max(0.0, float(info.mEndET) - float(info.mCurrentET))
+
+        s.track_name    = info.mTrackName.decode("utf-8", errors="replace").rstrip("\x00")
+        s.vehicle_name  = v.mVehicleName.decode("utf-8", errors="replace").rstrip("\x00")
+        session_int     = int(info.mSession)
+        s.session_type  = _SESSION_TYPE_MAP.get(session_int, f"Session {session_int}")
 
         phase  = int(info.mGamePhase)
         # mYellowFlagState is c_char — convert bytes to signed int

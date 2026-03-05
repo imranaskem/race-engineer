@@ -21,7 +21,7 @@ class StrategySnapshot:
     estimated_tyre_life_laps: int   # Total expected life of current compound
 
     # Fuel to add at next stop
-    fuel_to_add_kg: float           # Enough for next_stint_laps laps
+    fuel_to_add_l: float            # Enough for next_stint_laps laps (litres)
     next_stint_laps: int
 
     # Time-loss estimate
@@ -35,7 +35,7 @@ class StrategySnapshot:
             f"forced stop in {self.forced_pit_in_laps:.1f} laps (lap {self.recommended_pit_lap}), "
             f"tyres {self.tyre_stint_age_laps} laps old "
             f"(est. life {self.estimated_tyre_life_laps} laps), "
-            f"add {self.fuel_to_add_kg:.1f} kg for {self.next_stint_laps}-lap stint, "
+            f"add {self.fuel_to_add_l:.1f} L for {self.next_stint_laps}-lap stint, "
             f"pit time loss ~{self.pit_time_loss_s:.0f}s."
         )
 
@@ -47,7 +47,7 @@ def compute_strategy(context: dict) -> StrategySnapshot:
     """
     fuel_laps = float(context.get("laps_of_fuel_remaining", 0))
     lap_number = int(context.get("lap_number", 1))
-    avg_fuel_kg = float(context.get("avg_fuel_per_lap_kg", 2.5))
+    avg_fuel_l = float(context.get("avg_fuel_per_lap_l", 3.3))
     tyre_wear = context.get("tyre_wear_pct", {})
     session_h = float(context.get("session_time_remaining_h", 24.0))
     avg_lap_s_str = context.get("rolling_avg_lap", "0:00.000")
@@ -92,12 +92,12 @@ def compute_strategy(context: dict) -> StrategySnapshot:
     recommended_pit_lap = lap_number + max(0, int(laps_to_deadline) - 2)
 
     # Next stint length: how long can we go before next fuel stop
-    # Assume we fill to full tank (110 kg), minus safety margin
-    tank_capacity_kg = 110.0
+    # Assume we fill to full tank (~110 L for GT3), minus safety margin
+    tank_capacity_l = 110.0
     safety_reserve_laps = 3
-    next_stint_laps = int((tank_capacity_kg / avg_fuel_kg) - safety_reserve_laps)
+    next_stint_laps = int((tank_capacity_l / avg_fuel_l) - safety_reserve_laps)
     next_stint_laps = min(next_stint_laps, int(session_laps_remaining))
-    fuel_to_add_kg = min(tank_capacity_kg, next_stint_laps * avg_fuel_kg * 1.05)  # 5% buffer
+    fuel_to_add_l = min(tank_capacity_l, next_stint_laps * avg_fuel_l * 1.05)  # 5% buffer
 
     # Pit time loss estimate (in-lap, stationary, out-lap premium)
     # A typical LMU pit stop: ~25s stationary + 30s in-lap loss + 15s out-lap = ~70s
@@ -109,7 +109,7 @@ def compute_strategy(context: dict) -> StrategySnapshot:
         recommended_pit_lap=recommended_pit_lap,
         tyre_stint_age_laps=tyre_laps_used,
         estimated_tyre_life_laps=estimated_life,
-        fuel_to_add_kg=round(fuel_to_add_kg, 1),
+        fuel_to_add_l=round(fuel_to_add_l, 1),
         next_stint_laps=next_stint_laps,
         pit_time_loss_s=pit_time_loss_s,
     )

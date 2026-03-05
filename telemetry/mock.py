@@ -17,8 +17,8 @@ from .provider import CornerData, TelemetryProvider, TelemetryState, TyreData
 
 # Approximate lap duration in seconds (1:45)
 _LAP_DURATION_BASE: float = 105.0
-# Fuel consumption per lap in kg
-_FUEL_PER_LAP: float = 2.5
+# Fuel consumption per lap in litres
+_FUEL_PER_LAP: float = 3.3
 # Tyre wear increment per lap (fraction of total life)
 _WEAR_PER_LAP: float = 0.018
 
@@ -58,7 +58,7 @@ class MockTelemetryProvider(TelemetryProvider):
         self._fcy_end: float = 0.0
 
         # Initialise starting state for a mid-field GT3 at race start
-        self._state.fuel_kg = 110.0
+        self._state.fuel_l = 110.0
         self._state.position = 6
         self._state.position_in_class = 4
         self._state.total_cars = 32
@@ -66,6 +66,9 @@ class MockTelemetryProvider(TelemetryProvider):
         self._state.gap_to_car_ahead = 4.2
         self._state.gap_to_car_behind = 1.8
         self._state.gap_to_leader = 0.0
+        self._state.track_name = "Circuit de la Sarthe"
+        self._state.session_type = "Race"
+        self._state.vehicle_name = "BMW M4 GT3"
         self._state.track_temp_c = 32.0
         self._state.air_temp_c = 22.0
         self._state.session_time_remaining = 86400.0
@@ -148,10 +151,17 @@ class MockTelemetryProvider(TelemetryProvider):
         self._state.tyres.temp_rl = base_temp - 1 + random.gauss(0, 2)
         self._state.tyres.temp_rr = base_temp + 1 + random.gauss(0, 2)
 
-        # --- Fuel (continuous drain) ---
+        # --- Fuel (continuous drain, litres) ---
         fuel_drain_rate = (_FUEL_PER_LAP / self._current_lap_duration) * 0.02
         if not self._state.in_pit:
-            self._state.fuel_kg = max(0.0, self._state.fuel_kg - fuel_drain_rate)
+            self._state.fuel_l = max(0.0, self._state.fuel_l - fuel_drain_rate)
+
+        # --- Battery / virtual energy (simple oscillation for dev realism) ---
+        # Simulate deploy/regen cycle: charge drops on straights, recovers in braking zones
+        speed_norm = self._state.speed_kmh / 310.0
+        charge_delta = (0.3 - speed_norm) * 0.0002   # regen when braking, deploy on straight
+        self._state.battery_charge_fraction = max(0.0, min(1.0,
+            self._state.battery_charge_fraction + charge_delta))
 
         # --- Gaps (jitter around a mean) ---
         self._state.gap_to_car_ahead = max(0.0, self._state.gap_to_car_ahead + random.gauss(0, 0.05))
