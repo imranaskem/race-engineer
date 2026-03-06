@@ -42,8 +42,16 @@ TTS_SAMPLE_RATE: int = 22050
 STT_SAMPLE_RATE: int = 16000
 STT_CHANNELS: int = 1
 
-# Push-to-talk key (pynput key name)
-PTT_KEY: str = "space"
+# Push-to-talk — set PTT_TYPE to "keyboard" or "joystick"
+PTT_TYPE: str = os.getenv("PTT_TYPE", "keyboard")
+
+# Keyboard PTT: pynput key name (e.g. "space", "f1", "ctrl")
+PTT_KEY: str = os.getenv("PTT_KEY", "space")
+
+# Joystick PTT: device index and button code from the `inputs` library
+# Run with PTT_TYPE=joystick to see button codes logged on press
+PTT_JOYSTICK_DEVICE: int = int(os.getenv("PTT_JOYSTICK_DEVICE", "0"))
+PTT_JOYSTICK_BUTTON: str = os.getenv("PTT_JOYSTICK_BUTTON", "BTN_TRIGGER")
 
 # Telemetry polling
 TELEMETRY_POLL_INTERVAL: float = 0.2  # seconds (5fps matches scoring buffer)

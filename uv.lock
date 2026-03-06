@@ -462,6 +462,15 @@ wheels = [
 ]
 
 [[package]]
+name = "inputs"
+version = "0.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d1/cd/5f434220920f76eb73d19bb7aab8d857445f40aa642718e6e51e850cd663/inputs-0.5.tar.gz", hash = "sha256:a31d5b96a3525f1232f326be9e7ce8ccaf873c6b1fb84d9f3c9bc3d79b23eae4", size = 33393, upload-time = "2018-10-05T22:38:14.206Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/94/040a0d9c81f018c39bd887b7b825013b024deb0a6c795f9524797e2cd41b/inputs-0.5-py2.py3-none-any.whl", hash = "sha256:13f894564e52134cf1e3862b1811da034875eb1f2b62e6021e3776e9669a96ec", size = 33630, upload-time = "2018-10-05T22:38:28.28Z" },
+]
+
+[[package]]
 name = "jiter"
 version = "0.13.0"
 source = { registry = "https://pypi.org/simple" }
@@ -980,6 +989,7 @@ dependencies = [
     { name = "anthropic" },
     { name = "elevenlabs" },
     { name = "faster-whisper" },
+    { name = "inputs" },
     { name = "numpy" },
     { name = "pynput" },
     { name = "python-dotenv" },
@@ -996,6 +1006,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=0.49.0" },
     { name = "elevenlabs", specifier = ">=1.50.0" },
     { name = "faster-whisper", specifier = ">=1.1.0" },
+    { name = "inputs", specifier = ">=0.5" },
     { name = "numpy", specifier = ">=2.0.0" },
     { name = "pynput", specifier = ">=1.7.7" },
     { name = "python-dotenv", specifier = ">=1.0.0" },

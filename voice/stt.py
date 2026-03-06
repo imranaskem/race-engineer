@@ -28,6 +28,7 @@ class WhisperSTT:
         self._audio_chunks: list[np.ndarray] = []
         self._lock = threading.Lock()
         self._listener: keyboard.Listener | None = None
+        self._joystick_running = False
 
     async def load(self) -> None:
         """Load the Whisper model (blocking, run once at startup)."""
@@ -91,6 +92,90 @@ class WhisperSTT:
     def stop_keyboard_listener(self) -> None:
         if self._listener:
             self._listener.stop()
+
+    def start_joystick_listener(
+        self,
+        on_transcript: Callable[[str], None],
+    ) -> None:
+        """
+        Start a background thread that polls for joystick/wheel button events.
+        Uses the `inputs` library. PTT button is config.PTT_JOYSTICK_BUTTON
+        (an `inputs` event code, e.g. 'BTN_TRIGGER').
+        All button presses are logged so you can discover the right code for
+        your wheel.
+        """
+        try:
+            import inputs as _inputs
+        except ImportError:
+            raise RuntimeError("The 'inputs' package is required for joystick PTT. Run: uv add inputs")
+
+        loop = asyncio.get_event_loop()
+        self._joystick_running = True
+
+        def _joystick_thread() -> None:
+            gamepads = _inputs.devices.gamepads
+            if not gamepads:
+                log.error(
+                    "No gamepad/wheel found (PTT_TYPE=joystick). "
+                    "Check device is connected or switch to PTT_TYPE=keyboard."
+                )
+                return
+            device = gamepads[config.PTT_JOYSTICK_DEVICE] if config.PTT_JOYSTICK_DEVICE < len(gamepads) else gamepads[0]
+            log.info("Joystick PTT active — device: '%s', button: '%s'", device.name, config.PTT_JOYSTICK_BUTTON)
+
+            while self._joystick_running:
+                try:
+                    events = device.read()
+                except Exception as exc:
+                    log.error("Joystick read error: %s", exc)
+                    break
+                for event in events:
+                    if event.ev_type != "Key":
+                        continue
+                    log.debug("Joystick button event: code=%s state=%s", event.code, event.state)
+                    if event.code != config.PTT_JOYSTICK_BUTTON:
+                        # Log unmatched presses so users can discover their button code
+                        if event.state == 1:
+                            log.info(
+                                "Joystick button pressed (not PTT): code='%s' — "
+                                "set PTT_JOYSTICK_BUTTON=%s to use this button",
+                                event.code, event.code,
+                            )
+                        continue
+                    if event.state == 1 and not self._recording.is_set():
+                        self._start_recording()
+                    elif event.state == 0 and self._recording.is_set():
+                        audio = self._stop_recording()
+                        if audio is not None and len(audio) > config.STT_SAMPLE_RATE * 0.3:
+                            def _transcribe_and_post() -> None:
+                                text = self._transcribe(audio)
+                                if text:
+                                    loop.call_soon_threadsafe(on_transcript, text)
+                            threading.Thread(target=_transcribe_and_post, daemon=True).start()
+
+        threading.Thread(target=_joystick_thread, daemon=True).start()
+        log.info("Joystick PTT listener started.")
+
+    def stop_joystick_listener(self) -> None:
+        self._joystick_running = False
+
+    def start_ptt_listener(
+        self,
+        on_transcript: Callable[[str], None],
+        on_quit: Callable[[], None] | None = None,
+    ) -> None:
+        """Start the configured PTT listener (keyboard or joystick)."""
+        if config.PTT_TYPE == "joystick":
+            self.start_joystick_listener(on_transcript)
+        else:
+            self.start_keyboard_listener(on_transcript, on_quit=on_quit)
+
+    def stop_ptt_listener(self) -> None:
+        """Stop whichever PTT listener is running."""
+        if config.PTT_TYPE == "joystick":
+            self.stop_joystick_listener()
+        else:
+            self.stop_keyboard_listener()
 
     # ------------------------------------------------------------------
     # Recording

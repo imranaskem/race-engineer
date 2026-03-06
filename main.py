@@ -115,11 +115,19 @@ async def main() -> None:
 
     audio_stream = stt.start_stream()
 
+    if config.PTT_TYPE == "joystick":
+        ptt_label = f"joystick button [{config.PTT_JOYSTICK_BUTTON}] (device {config.PTT_JOYSTICK_DEVICE})"
+    else:
+        ptt_label = f"keyboard key [{config.PTT_KEY.upper()}]"
+
     print()
     print("=" * 50)
     print("  LMU AI Race Engineer — READY")
-    print(f"  Hold [{config.PTT_KEY.upper()}] to talk to your engineer.")
-    print("  Press [ESC] to quit.")
+    print(f"  Hold {ptt_label} to talk to your engineer.")
+    if config.PTT_TYPE == "keyboard":
+        print("  Press [ESC] to quit.")
+    else:
+        print("  Press Ctrl+C to quit.")
     print("=" * 50)
     print()
 
@@ -129,7 +137,7 @@ async def main() -> None:
         log.info("ESC pressed — shutting down.")
         stop_event.set()
 
-    stt.start_keyboard_listener(on_transcript, on_quit=_on_quit)
+    stt.start_ptt_listener(on_transcript, on_quit=_on_quit)
 
     async def _wait_for_stop() -> None:
         await stop_event.wait()
@@ -147,7 +155,7 @@ async def main() -> None:
     except KeyboardInterrupt:
         log.info("Shutting down.")
     finally:
-        stt.stop_keyboard_listener()
+        stt.stop_ptt_listener()
         audio_stream.stop()
         audio_stream.close()
         await provider.stop()
