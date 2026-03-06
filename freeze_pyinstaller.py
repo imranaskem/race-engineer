@@ -4,8 +4,8 @@ Build script for LMU AI Race Engineer — produces a standalone Windows exe.
 Run on Windows from the project root:
     uv run python freeze_pyinstaller.py
 
-Output: dist\LMU-Race-Engineer\
-  LMU-Race-Engineer.exe   ← double-click to launch
+Output: dist\\LMU-Race-Engineer\\
+  LMU-Race-Engineer.exe   <- double-click to launch
   .env                    ← fill in your API keys before first run
   SETUP.txt               ← quick-start guide
 

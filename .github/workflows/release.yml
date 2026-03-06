@@ -18,6 +18,9 @@ jobs:
       - name: Generate icon
         run: uv run python create_icon.py
 
+      - name: Install PyInstaller
+        run: uv add --dev pyinstaller
+
       - name: Build exe
         run: uv run python freeze_pyinstaller.py --release
 
