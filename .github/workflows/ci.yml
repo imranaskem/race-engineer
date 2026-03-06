@@ -50,6 +50,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: LMU-Race-Engineer-${{ steps.version.outputs.version }}-windows.zip
-          generate_release_notes: true
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
