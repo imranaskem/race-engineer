@@ -173,12 +173,14 @@ def create_release_zip() -> None:
         print("Run build first.")
         sys.exit(1)
 
-    # Read version from pyproject.toml if available
+    # Read version from the latest git tag
     version = "dev"
     try:
-        import tomllib
-        with open("pyproject.toml", "rb") as f:
-            version = tomllib.load(f)["project"]["version"]
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            capture_output=True, text=True, check=True,
+        )
+        version = result.stdout.strip().lstrip("v")
     except Exception:
         pass
 
