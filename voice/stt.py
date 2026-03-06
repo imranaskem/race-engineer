@@ -227,7 +227,8 @@ class WhisperSTT:
             if not self._audio_chunks:
                 return None
             audio = np.concatenate(self._audio_chunks, axis=0).flatten()
-        log.debug("Recording stopped. %.1f s captured.", len(audio) / config.STT_SAMPLE_RATE)
+        rms = float(np.sqrt(np.mean(audio ** 2)))
+        log.info("Recording stopped. %.1f s captured, RMS level: %.4f.", len(audio) / config.STT_SAMPLE_RATE, rms)
         return audio
 
     def _audio_callback(
@@ -243,6 +244,8 @@ class WhisperSTT:
 
     def start_stream(self) -> sd.InputStream:
         """Open and return the sounddevice input stream. Must be kept alive."""
+        default_device = sd.query_devices(kind="input")
+        log.info("Audio input device: %s", default_device.get("name", "unknown"))
         stream = sd.InputStream(
             samplerate=config.STT_SAMPLE_RATE,
             channels=config.STT_CHANNELS,
@@ -272,9 +275,14 @@ class WhisperSTT:
             beam_size=5,
             language="en",
             vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 300},
+            vad_parameters={
+                "min_silence_duration_ms": 300,
+                "threshold": 0.3,  # default 0.5 — lower = more sensitive
+            },
         )
         text = " ".join(seg.text.strip() for seg in segments).strip()
         if text:
             log.info("STT: %s", text)
+        else:
+            log.info("STT: (no speech detected)")
         return text

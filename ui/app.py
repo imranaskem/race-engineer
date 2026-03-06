@@ -463,7 +463,10 @@ class MainWindow(QMainWindow):
                 on_quit=worker.request_stop,
                 on_listening_start=lambda: worker.status_changed.emit(STATUS_LISTENING),
                 on_listening_end=lambda: worker.status_changed.emit(STATUS_THINKING),
-                on_no_speech=lambda: worker.status_changed.emit(STATUS_READY),
+                on_no_speech=lambda: (
+                    worker.log_entry.emit("system", "No speech detected — check mic level."),
+                    worker.status_changed.emit(STATUS_READY),
+                ),
             )
 
     def _ptt_qt_key(self):
