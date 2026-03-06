@@ -4,12 +4,37 @@ An AI-powered voice race engineer for [Le Mans Ultimate](https://www.lemansultim
 
 ## How it works
 
-1. **Hold SPACE** to talk ("What's my fuel situation?", "Should I pit this lap?")
-2. **Whisper** transcribes your voice locally
+1. **Hold SPACE** (or a wheel button) to talk ("What's my fuel situation?", "Should I pit this lap?")
+2. **Whisper** transcribes your voice locally on your machine
 3. **Claude** reasons over live telemetry + strategy calculations and responds
 4. **ElevenLabs** voices the response — first words play within ~1 second
 
 Automatic alerts are voiced when triggered: FCY, low fuel, tyre wear critical.
+
+## Windows — download and run (no coding required)
+
+1. Download the latest `LMU-Race-Engineer-x.x.x-windows.zip` from the [Releases](../../releases) page
+2. Extract the zip anywhere
+3. Double-click **LMU-Race-Engineer.exe** to launch
+4. Click **Settings** and enter your API keys
+5. Start LMU, get in a session, then click **Start** in the app
+
+The app window shows a live log. Hold **SPACE** to talk to your engineer. If API keys aren't set, the Settings dialog opens automatically when you click Start.
+
+### API keys
+
+| Key | Where to get it |
+|---|---|
+| Anthropic (Claude) | [console.anthropic.com](https://console.anthropic.com/) |
+| ElevenLabs (voice) | [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys) |
+
+### Push-to-talk options
+
+**Keyboard (default)** — hold SPACE. Change the key in Settings.
+
+**Steering wheel button** — set PTT Type to `joystick` in Settings and enter your button code. Launch once, press buttons on your wheel, and the log shows each button code so you can set the right one.
+
+---
 
 ## Stack
 
@@ -18,61 +43,76 @@ Automatic alerts are voiced when triggered: FCY, low fuel, tyre wear critical.
 | Speech-to-text | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) `small.en` |
 | AI | Claude `claude-opus-4-6` via Anthropic API |
 | Text-to-speech | ElevenLabs `eleven_turbo_v2_5` |
-| Push-to-talk | pynput keyboard listener |
+| Push-to-talk | pynput keyboard / `inputs` joystick |
 | Audio I/O | sounddevice |
-| Telemetry (dev) | Mock provider — realistic GT3 endurance race simulation |
-| Telemetry (prod) | rF2 shared memory reader *(Windows, coming soon)* |
+| UI | PySide6 (Windows); terminal (Mac/Linux) |
+| Telemetry | rF2 shared memory (Windows + LMU) / mock provider (dev) |
 
-## Setup
+## Latency
+
+| Stage | Target |
+|---|---|
+| PTT release -> STT result | ~300-600ms |
+| STT -> first Claude token | ~200-400ms |
+| First Claude token -> first audio | ~300-500ms |
+| **PTT release -> first word heard** | **~800-1500ms** |
+
+Sentence-buffered TTS means the driver hears the start of the response while Claude is still generating the rest.
+
+---
+
+## Developer setup (Mac/Linux)
 
 ### Prerequisites
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) package manager
-- Anthropic API key (with credits)
+- Anthropic API key
 - ElevenLabs API key
 
-### Install
+### Install and run
 
 ```bash
 git clone <repo>
 cd race-engineer
 uv sync
-```
-
-### Configure
-
-```bash
 cp .env.example .env
-```
-
-Edit `.env`:
-
-```
-ANTHROPIC_API_KEY=your_key_here
-ELEVENLABS_API_KEY=your_key_here
-ELEVENLABS_VOICE_ID=onwK4e9ZLuTAKqWW03F9   # Daniel — British, authoritative
-```
-
-Browse voices at [elevenlabs.io/voice-library](https://elevenlabs.io/voice-library).
-
-### Run
-
-```bash
+# edit .env with your API keys
 uv run python main.py
 ```
 
-The Whisper model downloads on first run (~150 MB). Hold **SPACE** to talk.
+On Mac/Linux the app runs in terminal mode with a mock telemetry provider (realistic GT3 endurance race simulation). The Whisper model downloads on first run (~150 MB).
+
+### Tests
+
+```bash
+uv run pytest tests/ -v
+```
+
+### Building the Windows exe
+
+Requires a Windows machine (or the GitHub Actions release workflow — push a `v*` tag to trigger it):
+
+```bash
+uv run python create_icon.py      # generate images/icon.ico (once)
+uv run python freeze_pyinstaller.py --release
+```
+
+Output: `dist/LMU-Race-Engineer/` + a versioned zip ready for release.
 
 ## Project structure
 
 ```
 race-engineer/
-├── main.py                  # asyncio entry point
+├── main.py                  # entry point — Qt UI on Windows, terminal on Mac/Linux
 ├── config.py                # all constants and env vars
+├── ui/
+│   ├── app.py               # PySide6 main window + settings dialog
+│   └── worker.py            # asyncio engine in a QThread
 ├── telemetry/
 │   ├── provider.py          # TelemetryState dataclass + abstract base
-│   ├── mock.py              # MockTelemetryProvider for Mac dev
+│   ├── mock.py              # MockTelemetryProvider for dev
+│   ├── rf2_shared_memory.py # live LMU telemetry via rF2 shared memory
 │   ├── aggregator.py        # rolling averages, lap deltas, edge-triggered alerts
 │   └── __init__.py          # selects provider by platform
 ├── voice/
@@ -84,24 +124,3 @@ race-engineer/
 └── tests/
     └── test_aggregator.py
 ```
-
-## Tests
-
-```bash
-uv run pytest tests/ -v
-```
-
-## Windows / live telemetry
-
-On Windows with LMU running, the app will automatically use the rF2 shared memory provider (once `telemetry/rf2_shared_memory.py` is implemented). On Mac it always uses the mock provider.
-
-## Latency
-
-| Stage | Target |
-|---|---|
-| PTT release → STT result | ~300–600ms |
-| STT → first Claude token | ~200–400ms |
-| First Claude token → first audio | ~300–500ms |
-| **PTT release → first word heard** | **~800–1500ms** |
-
-Sentence-buffered TTS means the driver hears the start of the response while Claude is still generating the rest.

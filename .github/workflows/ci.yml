@@ -51,3 +51,5 @@ jobs:
         with:
           files: LMU-Race-Engineer-${{ steps.version.outputs.version }}-windows.zip
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
