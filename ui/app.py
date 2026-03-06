@@ -454,11 +454,16 @@ class MainWindow(QMainWindow):
             # Use Qt key events instead; window must be focused (fine for Mac dev).
             self._append_log("system", f"PTT: focus this window and hold [{config.PTT_KEY.upper()}].")
         else:
+            def _on_transcript(text: str) -> None:
+                worker.log_entry.emit("driver", text)
+                worker.post_transcript(text)
+
             stt.start_ptt_listener(
-                on_transcript=worker.post_transcript,
+                on_transcript=_on_transcript,
                 on_quit=worker.request_stop,
                 on_listening_start=lambda: worker.status_changed.emit(STATUS_LISTENING),
                 on_listening_end=lambda: worker.status_changed.emit(STATUS_THINKING),
+                on_no_speech=lambda: worker.status_changed.emit(STATUS_READY),
             )
 
     def _ptt_qt_key(self):

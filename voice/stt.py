@@ -47,11 +47,13 @@ class WhisperSTT:
         self,
         on_transcript: Callable[[str], None],
         on_quit: Callable[[], None] | None = None,
+        on_no_speech: Callable[[], None] | None = None,
     ) -> None:
         """
         Start a background keyboard listener for push-to-talk.
         Calls on_transcript(text) when a recording is transcribed.
         Calls on_quit() when ESC is pressed (if provided).
+        Calls on_no_speech() when PTT is released but nothing was detected.
         Both callbacks are expected to be thread-safe.
         """
         def _on_press(key: keyboard.Key | keyboard.KeyCode) -> None:
@@ -80,8 +82,12 @@ class WhisperSTT:
                                 text = self._transcribe(audio)
                                 if text:
                                     on_transcript(text)
+                                elif on_no_speech:
+                                    on_no_speech()
 
                             threading.Thread(target=_transcribe_and_post, daemon=True).start()
+                        elif on_no_speech:
+                            on_no_speech()
             except Exception:
                 pass
 
@@ -96,6 +102,7 @@ class WhisperSTT:
     def start_joystick_listener(
         self,
         on_transcript: Callable[[str], None],
+        on_no_speech: Callable[[], None] | None = None,
     ) -> None:
         """
         Start a background thread that polls for joystick/wheel button events.
@@ -150,7 +157,11 @@ class WhisperSTT:
                                 text = self._transcribe(audio)
                                 if text:
                                     on_transcript(text)
+                                elif on_no_speech:
+                                    on_no_speech()
                             threading.Thread(target=_transcribe_and_post, daemon=True).start()
+                        elif on_no_speech:
+                            on_no_speech()
 
         threading.Thread(target=_joystick_thread, daemon=True).start()
         log.info("Joystick PTT listener started.")
@@ -164,14 +175,15 @@ class WhisperSTT:
         on_quit: Callable[[], None] | None = None,
         on_listening_start: Callable[[], None] | None = None,
         on_listening_end: Callable[[], None] | None = None,
+        on_no_speech: Callable[[], None] | None = None,
     ) -> None:
         """Start the configured PTT listener (keyboard or joystick)."""
         self._on_listening_start = on_listening_start
         self._on_listening_end = on_listening_end
         if config.PTT_TYPE == "joystick":
-            self.start_joystick_listener(on_transcript)
+            self.start_joystick_listener(on_transcript, on_no_speech=on_no_speech)
         else:
-            self.start_keyboard_listener(on_transcript, on_quit=on_quit)
+            self.start_keyboard_listener(on_transcript, on_quit=on_quit, on_no_speech=on_no_speech)
 
     def stop_ptt_listener(self) -> None:
         """Stop whichever PTT listener is running."""

@@ -174,6 +174,12 @@ class EngineWorker(QThread):
                     yield chunk
 
             self.status_changed.emit(STATUS_SPEAKING)
-            await tts.stream_speak(_text_gen())
-            self.log_entry.emit("engineer", "".join(response_buf))
-            self.status_changed.emit(STATUS_READY)
+            try:
+                await tts.stream_speak(_text_gen())
+            except Exception as exc:
+                log.exception("Engineer response failed")
+                self.log_entry.emit("system", f"Error: {type(exc).__name__}: {exc}")
+            finally:
+                if response_buf:
+                    self.log_entry.emit("engineer", "".join(response_buf))
+                self.status_changed.emit(STATUS_READY)
