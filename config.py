@@ -3,7 +3,13 @@ import sys
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# When running as a PyInstaller frozen exe, load .env from alongside the exe.
+# When running from source, load_dotenv() searches upward from cwd as normal.
+if getattr(sys, "frozen", False):
+    _base_dir = os.path.dirname(sys.executable)
+    load_dotenv(os.path.join(_base_dir, ".env"))
+else:
+    load_dotenv()
 
 # API keys
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")

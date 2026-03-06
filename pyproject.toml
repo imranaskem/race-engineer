@@ -13,6 +13,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "pynput>=1.7.7",
     "inputs>=0.5",
+    "pyside6>=6.10.2",
 ]
 
 [build-system]

@@ -29,6 +29,8 @@ class WhisperSTT:
         self._lock = threading.Lock()
         self._listener: keyboard.Listener | None = None
         self._joystick_running = False
+        self._on_listening_start: Callable[[], None] | None = None
+        self._on_listening_end: Callable[[], None] | None = None
 
     async def load(self) -> None:
         """Load the Whisper model (blocking, run once at startup)."""
@@ -50,14 +52,12 @@ class WhisperSTT:
         Start a background keyboard listener for push-to-talk.
         Calls on_transcript(text) when a recording is transcribed.
         Calls on_quit() when ESC is pressed (if provided).
-        Uses asyncio.get_event_loop() so the callback posts back to the event loop.
+        Both callbacks are expected to be thread-safe.
         """
-        loop = asyncio.get_event_loop()
-
         def _on_press(key: keyboard.Key | keyboard.KeyCode) -> None:
             try:
                 if key == keyboard.Key.esc and on_quit is not None:
-                    loop.call_soon_threadsafe(on_quit)
+                    on_quit()
                     return
                 if str(key) == f"Key.{config.PTT_KEY}" or (
                     hasattr(key, "char") and key.char == config.PTT_KEY
@@ -79,7 +79,7 @@ class WhisperSTT:
                             def _transcribe_and_post() -> None:
                                 text = self._transcribe(audio)
                                 if text:
-                                    loop.call_soon_threadsafe(on_transcript, text)
+                                    on_transcript(text)
 
                             threading.Thread(target=_transcribe_and_post, daemon=True).start()
             except Exception:
@@ -109,7 +109,6 @@ class WhisperSTT:
         except ImportError:
             raise RuntimeError("The 'inputs' package is required for joystick PTT. Run: uv add inputs")
 
-        loop = asyncio.get_event_loop()
         self._joystick_running = True
 
         def _joystick_thread() -> None:
@@ -150,7 +149,7 @@ class WhisperSTT:
                             def _transcribe_and_post() -> None:
                                 text = self._transcribe(audio)
                                 if text:
-                                    loop.call_soon_threadsafe(on_transcript, text)
+                                    on_transcript(text)
                             threading.Thread(target=_transcribe_and_post, daemon=True).start()
 
         threading.Thread(target=_joystick_thread, daemon=True).start()
@@ -163,8 +162,12 @@ class WhisperSTT:
         self,
         on_transcript: Callable[[str], None],
         on_quit: Callable[[], None] | None = None,
+        on_listening_start: Callable[[], None] | None = None,
+        on_listening_end: Callable[[], None] | None = None,
     ) -> None:
         """Start the configured PTT listener (keyboard or joystick)."""
+        self._on_listening_start = on_listening_start
+        self._on_listening_end = on_listening_end
         if config.PTT_TYPE == "joystick":
             self.start_joystick_listener(on_transcript)
         else:
@@ -178,17 +181,36 @@ class WhisperSTT:
             self.stop_keyboard_listener()
 
     # ------------------------------------------------------------------
-    # Recording
+    # Recording — public API for Qt key-event PTT (macOS)
+    # ------------------------------------------------------------------
+
+    def begin_ptt(self) -> None:
+        """Start recording. Thread-safe; can be called from the Qt main thread."""
+        if not self._recording.is_set():
+            self._start_recording()
+
+    def end_ptt(self) -> np.ndarray | None:
+        """Stop recording and return captured audio (or None). Thread-safe."""
+        if self._recording.is_set():
+            return self._stop_recording()
+        return None
+
+    # ------------------------------------------------------------------
+    # Recording (internal)
     # ------------------------------------------------------------------
 
     def _start_recording(self) -> None:
         with self._lock:
             self._audio_chunks.clear()
         self._recording.set()
+        if self._on_listening_start:
+            self._on_listening_start()
         log.debug("Recording started.")
 
     def _stop_recording(self) -> np.ndarray | None:
         self._recording.clear()
+        if self._on_listening_end:
+            self._on_listening_end()
         with self._lock:
             if not self._audio_chunks:
                 return None
