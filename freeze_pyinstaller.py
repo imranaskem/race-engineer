@@ -159,7 +159,7 @@ def build() -> None:
     (out_dir / "SETUP.txt").write_text(SETUP_TXT, encoding="utf-8")
 
     print()
-    print(f"Build complete → {out_dir}")
+    print(f"Build complete -> {out_dir}")
     print()
     print("Users need to:")
     print(f"  1. Edit {out_dir / '.env'}  (add API keys)")
