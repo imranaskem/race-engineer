@@ -130,6 +130,24 @@ QLabel#sectionLabel {
 QDialogButtonBox QPushButton {
     min-width: 80px;
 }
+QCheckBox {
+    spacing: 6px;
+}
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #555555;
+    border-radius: 3px;
+    background-color: #252525;
+}
+QCheckBox::indicator:checked {
+    background-color: #e8a000;
+    border-color: #e8a000;
+    image: url(none);
+}
+QCheckBox::indicator:hover {
+    border-color: #e8a000;
+}
 """
 
 # Status display config: (label, dot colour)
@@ -161,6 +179,17 @@ def _env_path() -> str:
         return os.path.join(os.path.dirname(sys.executable), ".env")
     here = os.path.dirname(os.path.abspath(__file__))
     return os.path.normpath(os.path.join(here, "..", ".env"))
+
+
+def _app_icon() -> QIcon:
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+    path = os.path.join(base, "images", "icon.ico")
+    if os.path.exists(path):
+        return QIcon(path)
+    return QIcon(_make_tray_pixmap())
 
 
 def _make_dot_pixmap(colour: str, size: int = 14) -> QPixmap:
@@ -433,6 +462,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("LMU Race Engineer")
         self.setMinimumSize(480, 520)
+        self._app_icon = _app_icon()
+        self.setWindowIcon(self._app_icon)
         self._worker: EngineWorker | None = None
         self._active_stt = None  # WhisperSTT whose pynput listener we started
         self._build_ui()
@@ -502,7 +533,7 @@ class MainWindow(QMainWindow):
         root.addLayout(ctrl_row)
 
     def _build_tray(self) -> None:
-        self._tray = QSystemTrayIcon(QIcon(_make_tray_pixmap()), self)
+        self._tray = QSystemTrayIcon(self._app_icon, self)
         self._tray.setToolTip("LMU Race Engineer")
 
         menu = QMenu()
@@ -671,8 +702,6 @@ class MainWindow(QMainWindow):
         self._status_label.setText(label)
         self._status_label.setStyleSheet(f"color: {colour};")
         self._dot_label.setPixmap(_make_dot_pixmap(colour, 16))
-        # Update tray icon colour
-        self._tray.setIcon(QIcon(_make_tray_pixmap(colour)))
 
     def _append_log(self, category: str, text: str) -> None:
         colour = _LOG_COLOURS.get(category, "#888888")
@@ -712,6 +741,7 @@ def run() -> None:
     app.setApplicationName("LMU Race Engineer")
     app.setQuitOnLastWindowClosed(False)
     app.setStyleSheet(_STYLESHEET)
+    app.setWindowIcon(_app_icon())
 
     window = MainWindow()
     window.show()
