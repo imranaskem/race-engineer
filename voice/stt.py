@@ -123,14 +123,14 @@ class WhisperSTT:
         self._joystick_running = True
 
         def _joystick_thread() -> None:
-            gamepads = _inputs.devices.gamepads
-            if not gamepads:
+            controllers = _inputs.devices.gamepads
+            if not controllers:
                 log.error(
-                    "No gamepad/wheel found (PTT_TYPE=joystick). "
+                    "No game controller/wheel found (PTT_TYPE=joystick). "
                     "Check device is connected or switch to PTT_TYPE=keyboard."
                 )
                 return
-            device = gamepads[config.PTT_JOYSTICK_DEVICE] if config.PTT_JOYSTICK_DEVICE < len(gamepads) else gamepads[0]
+            device = controllers[config.PTT_JOYSTICK_DEVICE] if config.PTT_JOYSTICK_DEVICE < len(controllers) else controllers[0]
             log.info("Joystick PTT active — device: '%s', button: '%s'", device.name, config.PTT_JOYSTICK_BUTTON)
 
             while self._joystick_running:

@@ -347,10 +347,10 @@ class SettingsDialog(QDialog):
     def _joystick_capture_thread(self) -> None:
         try:
             import inputs as _inputs
-            gamepads = _inputs.devices.gamepads
-            if not gamepads:
+            controllers = _inputs.devices.gamepads
+            if not controllers:
                 return
-            device = gamepads[0]
+            device = controllers[0]
             while self._joystick_capture_running:
                 try:
                     events = device.read()
@@ -609,14 +609,29 @@ class MainWindow(QMainWindow):
     def _ptt_qt_key(self):
         """Map config.PTT_KEY to a Qt.Key value for macOS key-event PTT."""
         import config as _cfg
-        return {
+        key = _cfg.PTT_KEY.lower()
+        _special = {
             "space": Qt.Key.Key_Space,
-            "f1": Qt.Key.Key_F1, "f2": Qt.Key.Key_F2,
-            "f3": Qt.Key.Key_F3, "f4": Qt.Key.Key_F4,
-            "f5": Qt.Key.Key_F5, "f6": Qt.Key.Key_F6,
-            "ctrl": Qt.Key.Key_Control, "alt": Qt.Key.Key_Alt,
+            "enter": Qt.Key.Key_Return,
+            "tab": Qt.Key.Key_Tab,
+            "esc": Qt.Key.Key_Escape,
+            "ctrl": Qt.Key.Key_Control,
+            "alt": Qt.Key.Key_Alt,
             "shift": Qt.Key.Key_Shift,
-        }.get(_cfg.PTT_KEY.lower(), Qt.Key.Key_Space)
+            "cmd": Qt.Key.Key_Meta,
+            "f1":  Qt.Key.Key_F1,  "f2":  Qt.Key.Key_F2,
+            "f3":  Qt.Key.Key_F3,  "f4":  Qt.Key.Key_F4,
+            "f5":  Qt.Key.Key_F5,  "f6":  Qt.Key.Key_F6,
+            "f7":  Qt.Key.Key_F7,  "f8":  Qt.Key.Key_F8,
+            "f9":  Qt.Key.Key_F9,  "f10": Qt.Key.Key_F10,
+            "f11": Qt.Key.Key_F11, "f12": Qt.Key.Key_F12,
+        }
+        if key in _special:
+            return _special[key]
+        # Single printable character — Qt.Key for letters/digits matches ASCII of uppercase
+        if len(key) == 1 and key.isprintable():
+            return Qt.Key(ord(key.upper()))
+        return Qt.Key.Key_Space
 
     def keyPressEvent(self, event):  # noqa: N802
         if not event.isAutoRepeat() and event.key() == self._ptt_qt_key():

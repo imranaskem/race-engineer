@@ -41,7 +41,7 @@ HIDDEN_IMPORTS = [
     # pynput Windows backend
     "pynput.keyboard._win32",
     "pynput.mouse._win32",
-    # inputs (gamepad/joystick)
+    # inputs (game controller/joystick)
     "inputs",
     # anthropic
     "anthropic",
