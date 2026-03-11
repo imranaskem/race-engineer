@@ -79,7 +79,11 @@ class WhisperSTT:
                         if audio is not None and len(audio) > config.STT_SAMPLE_RATE * 0.3:
                             # Transcribe in a thread so we don't block the listener
                             def _transcribe_and_post() -> None:
-                                text = self._transcribe(audio)
+                                try:
+                                    text = self._transcribe(audio)
+                                except Exception:
+                                    log.exception("Transcription error")
+                                    text = ""
                                 if text:
                                     on_transcript(text)
                                 elif on_no_speech:
@@ -154,7 +158,11 @@ class WhisperSTT:
                         audio = self._stop_recording()
                         if audio is not None and len(audio) > config.STT_SAMPLE_RATE * 0.3:
                             def _transcribe_and_post() -> None:
-                                text = self._transcribe(audio)
+                                try:
+                                    text = self._transcribe(audio)
+                                except Exception:
+                                    log.exception("Transcription error")
+                                    text = ""
                                 if text:
                                     on_transcript(text)
                                 elif on_no_speech:
