@@ -9,7 +9,7 @@ import os
 import sys
 import threading
 
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -20,6 +20,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -35,7 +36,6 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
-    QComboBox,
 )
 from dotenv import set_key
 
@@ -198,12 +198,31 @@ def _make_tray_pixmap(colour: str = "#e8a000") -> QPixmap:
 # ---------------------------------------------------------------------------
 
 class SettingsDialog(QDialog):
+    # Emitted from background joystick-capture thread → main thread
+    _joystick_captured = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setMinimumWidth(420)
+
+        # PTT state (updated by capture or loaded from config)
+        self._ptt_type_val: str = ""
+        self._ptt_key_val: str = ""
+        self._ptt_joystick_val: str = ""
+
+        # Capture state
+        self._capture_mode = False
+        self._joystick_capture_running = False
+
+        self._joystick_captured.connect(self._on_joystick_captured)
+
         self._build_ui()
         self._load()
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -234,29 +253,39 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(form)
 
+        # --- STT ---
+        stt_label = QLabel("SPEECH RECOGNITION")
+        stt_label.setObjectName("sectionLabel")
+        layout.addWidget(stt_label)
+
+        stt_form = QFormLayout()
+        stt_form.setSpacing(10)
+        stt_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self._vad_filter = QCheckBox()
+        stt_form.addRow("VAD filter:", self._vad_filter)
+
+        layout.addLayout(stt_form)
+
         # --- PTT ---
         ptt_label = QLabel("PUSH-TO-TALK")
         ptt_label.setObjectName("sectionLabel")
         layout.addWidget(ptt_label)
 
-        ptt_form = QFormLayout()
-        ptt_form.setSpacing(10)
-        ptt_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        ptt_row = QHBoxLayout()
+        ptt_row.setSpacing(10)
 
-        self._ptt_type = QComboBox()
-        self._ptt_type.addItems(["keyboard", "joystick"])
-        self._ptt_type.currentTextChanged.connect(self._on_ptt_type_changed)
-        ptt_form.addRow("Type:", self._ptt_type)
+        self._ptt_display = QLabel()
+        self._ptt_display.setStyleSheet("color: #e8a000; font-weight: bold;")
+        ptt_row.addWidget(self._ptt_display)
+        ptt_row.addStretch()
 
-        self._ptt_key = QLineEdit()
-        self._ptt_key.setPlaceholderText("space")
-        ptt_form.addRow("Key:", self._ptt_key)
+        self._change_ptt_btn = QPushButton("Change PTT Button")
+        self._change_ptt_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._change_ptt_btn.clicked.connect(self._start_ptt_capture)
+        ptt_row.addWidget(self._change_ptt_btn)
 
-        self._ptt_button = QLineEdit()
-        self._ptt_button.setPlaceholderText("BTN_TRIGGER")
-        ptt_form.addRow("Joystick Button:", self._ptt_button)
-
-        layout.addLayout(ptt_form)
+        layout.addLayout(ptt_row)
 
         # --- Buttons ---
         buttons = QDialogButtonBox(
@@ -266,54 +295,128 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-        self._on_ptt_type_changed(self._ptt_type.currentText())
+    def _format_ptt_label(self) -> str:
+        if self._ptt_type_val == "joystick":
+            return f"{self._ptt_joystick_val}  (joystick)"
+        return f"{self._ptt_key_val}  (keyboard)"
 
-    def _on_ptt_type_changed(self, ptt_type: str) -> None:
-        is_keyboard = ptt_type == "keyboard"
-        # Find the rows and toggle visibility
-        for i in range(self.layout().count()):
-            item = self.layout().itemAt(i)
-            if item and item.layout():
-                form = item.layout()
-                if isinstance(form, QFormLayout):
-                    for row in range(form.rowCount()):
-                        label_item = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
-                        field_item = form.itemAt(row, QFormLayout.ItemRole.FieldRole)
-                        if label_item and field_item:
-                            label_w = label_item.widget()
-                            field_w = field_item.widget()
-                            if label_w and "Key:" in label_w.text():
-                                label_w.setVisible(is_keyboard)
-                                field_w.setVisible(is_keyboard)
-                            if label_w and "Joystick" in label_w.text():
-                                label_w.setVisible(not is_keyboard)
-                                field_w.setVisible(not is_keyboard)
+    # ------------------------------------------------------------------
+    # PTT capture
+    # ------------------------------------------------------------------
+
+    def _start_ptt_capture(self) -> None:
+        self._capture_mode = True
+        self._change_ptt_btn.setText("Press any key or button…")
+        self._change_ptt_btn.setEnabled(False)
+        self._ptt_display.setText("Waiting…")
+        # Grab keyboard focus so keyPressEvent fires
+        self.setFocus()
+        # Start joystick capture thread in parallel
+        self._joystick_capture_running = True
+        threading.Thread(target=self._joystick_capture_thread, daemon=True).start()
+
+    def _joystick_capture_thread(self) -> None:
+        try:
+            import inputs as _inputs
+            gamepads = _inputs.devices.gamepads
+            if not gamepads:
+                return
+            device = gamepads[0]
+            while self._joystick_capture_running:
+                try:
+                    events = device.read()
+                except Exception:
+                    break
+                for event in events:
+                    if event.ev_type == "Key" and event.state == 1:
+                        if self._joystick_capture_running:
+                            self._joystick_capture_running = False
+                            self._joystick_captured.emit(event.code)
+                        return
+        except Exception:
+            pass
+
+    def _on_joystick_captured(self, code: str) -> None:
+        """Called on main thread when a joystick button is captured."""
+        if not self._capture_mode:
+            return
+        self._capture_mode = False
+        self._ptt_type_val = "joystick"
+        self._ptt_joystick_val = code
+        self._ptt_display.setText(self._format_ptt_label())
+        self._change_ptt_btn.setText("Change PTT Button")
+        self._change_ptt_btn.setEnabled(True)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if self._capture_mode and not event.isAutoRepeat():
+            self._capture_mode = False
+            self._joystick_capture_running = False  # stop joystick thread
+            key_name = self._qt_key_to_config_name(event)
+            self._ptt_type_val = "keyboard"
+            self._ptt_key_val = key_name
+            self._ptt_display.setText(self._format_ptt_label())
+            self._change_ptt_btn.setText("Change PTT Button")
+            self._change_ptt_btn.setEnabled(True)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    @staticmethod
+    def _qt_key_to_config_name(event) -> str:
+        """Map a Qt key event to the pynput/config key name string."""
+        _special = {
+            Qt.Key.Key_Space:   "space",
+            Qt.Key.Key_Return:  "enter",
+            Qt.Key.Key_Enter:   "enter",
+            Qt.Key.Key_Tab:     "tab",
+            Qt.Key.Key_Escape:  "esc",
+            Qt.Key.Key_Control: "ctrl",
+            Qt.Key.Key_Alt:     "alt",
+            Qt.Key.Key_Shift:   "shift",
+            Qt.Key.Key_Meta:    "cmd",
+            Qt.Key.Key_F1:  "f1",  Qt.Key.Key_F2:  "f2",
+            Qt.Key.Key_F3:  "f3",  Qt.Key.Key_F4:  "f4",
+            Qt.Key.Key_F5:  "f5",  Qt.Key.Key_F6:  "f6",
+            Qt.Key.Key_F7:  "f7",  Qt.Key.Key_F8:  "f8",
+            Qt.Key.Key_F9:  "f9",  Qt.Key.Key_F10: "f10",
+            Qt.Key.Key_F11: "f11", Qt.Key.Key_F12: "f12",
+        }
+        name = _special.get(event.key())
+        if name:
+            return name
+        text = event.text()
+        if text and text.isprintable():
+            return text.lower()
+        return f"key_{event.key()}"
+
+    # ------------------------------------------------------------------
+    # Load / Save
+    # ------------------------------------------------------------------
 
     def _load(self) -> None:
         import config
         self._anthropic.setText(config.ANTHROPIC_API_KEY)
         self._elevenlabs.setText(config.ELEVENLABS_API_KEY)
         self._voice_id.setText(config.ELEVENLABS_VOICE_ID)
-        idx = self._ptt_type.findText(config.PTT_TYPE)
-        if idx >= 0:
-            self._ptt_type.setCurrentIndex(idx)
-        self._ptt_key.setText(config.PTT_KEY)
-        self._ptt_button.setText(config.PTT_JOYSTICK_BUTTON)
+        self._ptt_type_val = config.PTT_TYPE
+        self._ptt_key_val = config.PTT_KEY
+        self._ptt_joystick_val = config.PTT_JOYSTICK_BUTTON
+        self._ptt_display.setText(self._format_ptt_label())
+        self._vad_filter.setChecked(config.STT_VAD_FILTER)
 
     def _save(self) -> None:
         env = _env_path()
-        # Ensure file exists
         if not os.path.exists(env):
             open(env, "w").close()
 
         set_key(env, "ANTHROPIC_API_KEY", self._anthropic.text().strip())
         set_key(env, "ELEVENLABS_API_KEY", self._elevenlabs.text().strip())
         set_key(env, "ELEVENLABS_VOICE_ID", self._voice_id.text().strip())
-        set_key(env, "PTT_TYPE", self._ptt_type.currentText())
-        set_key(env, "PTT_KEY", self._ptt_key.text().strip())
-        set_key(env, "PTT_JOYSTICK_BUTTON", self._ptt_button.text().strip())
+        set_key(env, "PTT_TYPE", self._ptt_type_val)
+        set_key(env, "PTT_KEY", self._ptt_key_val)
+        set_key(env, "PTT_JOYSTICK_BUTTON", self._ptt_joystick_val)
+        set_key(env, "STT_VAD_FILTER", "true" if self._vad_filter.isChecked() else "false")
 
-        # Reload config so the running app picks up the new values
         import importlib
         import config
         importlib.reload(config)
