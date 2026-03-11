@@ -270,16 +270,13 @@ class WhisperSTT:
         if audio.max() > 1.0:
             audio = audio / 32768.0
 
-        segments, _info = self._model.transcribe(
-            audio,
-            beam_size=5,
-            language="en",
-            vad_filter=True,
-            vad_parameters={
+        transcribe_kwargs: dict = dict(beam_size=5, language="en", vad_filter=config.STT_VAD_FILTER)
+        if config.STT_VAD_FILTER:
+            transcribe_kwargs["vad_parameters"] = {
                 "min_silence_duration_ms": 300,
                 "threshold": 0.1,  # lowered — more sensitive on noisy Windows setups
-            },
-        )
+            }
+        segments, _info = self._model.transcribe(audio, **transcribe_kwargs)
         text = " ".join(seg.text.strip() for seg in segments).strip()
         if text:
             log.info("STT: %s", text)

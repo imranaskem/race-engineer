@@ -378,11 +378,13 @@ class MainWindow(QMainWindow):
 
         self._start_btn = QPushButton("Start")
         self._start_btn.setObjectName("startBtn")
+        self._start_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._start_btn.clicked.connect(self._on_start)
         ctrl_row.addWidget(self._start_btn)
 
         self._stop_btn = QPushButton("Stop")
         self._stop_btn.setObjectName("stopBtn")
+        self._stop_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._stop_btn.setEnabled(False)
         self._stop_btn.clicked.connect(self._on_stop)
         ctrl_row.addWidget(self._stop_btn)
@@ -390,6 +392,7 @@ class MainWindow(QMainWindow):
         ctrl_row.addStretch()
 
         settings_btn = QPushButton("Settings")
+        settings_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         settings_btn.clicked.connect(self._on_settings)
         ctrl_row.addWidget(settings_btn)
 

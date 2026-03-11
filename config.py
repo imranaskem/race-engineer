@@ -47,6 +47,8 @@ TTS_SAMPLE_RATE: int = 22050
 # Audio input
 STT_SAMPLE_RATE: int = 16000
 STT_CHANNELS: int = 1
+# Set STT_VAD_FILTER=false in .env to disable Whisper VAD (helps if speech is never detected)
+STT_VAD_FILTER: bool = os.getenv("STT_VAD_FILTER", "true").lower() != "false"
 
 # Push-to-talk — set PTT_TYPE to "keyboard" or "joystick"
 PTT_TYPE: str = os.getenv("PTT_TYPE", "keyboard")
