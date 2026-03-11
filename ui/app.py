@@ -482,30 +482,36 @@ class MainWindow(QMainWindow):
         }.get(_cfg.PTT_KEY.lower(), Qt.Key.Key_Space)
 
     def keyPressEvent(self, event):  # noqa: N802
-        if (sys.platform == "darwin" and self._active_stt
-                and not event.isAutoRepeat()
-                and event.key() == self._ptt_qt_key()):
-            self._active_stt.begin_ptt()
-            if self._worker:
-                self._worker.status_changed.emit(STATUS_LISTENING)
+        if not event.isAutoRepeat() and event.key() == self._ptt_qt_key():
+            if sys.platform == "darwin" and self._active_stt:
+                # macOS: pynput can't run on a background thread (crashes), so
+                # we drive PTT from Qt key events instead.
+                self._active_stt.begin_ptt()
+                if self._worker:
+                    self._worker.status_changed.emit(STATUS_LISTENING)
+            # Always swallow the PTT key so it doesn't activate focused buttons.
+            event.accept()
+            return
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):  # noqa: N802
-        if (sys.platform == "darwin" and self._active_stt
-                and not event.isAutoRepeat()
-                and event.key() == self._ptt_qt_key()):
-            audio = self._active_stt.end_ptt()
-            worker = self._worker
-            stt = self._active_stt
-            if worker:
-                worker.status_changed.emit(STATUS_THINKING)
-            if audio is not None and len(audio) > config.STT_SAMPLE_RATE * 0.3 and worker:
-                def _transcribe_and_post():
-                    text = stt._transcribe(audio)
-                    if text:
-                        worker.log_entry.emit("driver", text)
-                        worker.post_transcript(text)
-                threading.Thread(target=_transcribe_and_post, daemon=True).start()
+        if not event.isAutoRepeat() and event.key() == self._ptt_qt_key():
+            if sys.platform == "darwin" and self._active_stt:
+                audio = self._active_stt.end_ptt()
+                worker = self._worker
+                stt = self._active_stt
+                if worker:
+                    worker.status_changed.emit(STATUS_THINKING)
+                if audio is not None and len(audio) > config.STT_SAMPLE_RATE * 0.3 and worker:
+                    def _transcribe_and_post():
+                        text = stt._transcribe(audio)
+                        if text:
+                            worker.log_entry.emit("driver", text)
+                            worker.post_transcript(text)
+                    threading.Thread(target=_transcribe_and_post, daemon=True).start()
+            # Always swallow the PTT key so it doesn't activate focused buttons.
+            event.accept()
+            return
         super().keyReleaseEvent(event)
 
     def _stop_ptt(self) -> None:

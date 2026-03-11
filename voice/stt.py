@@ -277,7 +277,7 @@ class WhisperSTT:
             vad_filter=True,
             vad_parameters={
                 "min_silence_duration_ms": 300,
-                "threshold": 0.3,  # default 0.5 — lower = more sensitive
+                "threshold": 0.1,  # lowered — more sensitive on noisy Windows setups
             },
         )
         text = " ".join(seg.text.strip() for seg in segments).strip()
